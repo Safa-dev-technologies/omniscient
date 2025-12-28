@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// TENANT MANAGEMENT
+// ============================================
+
+model Tenant {
+  id                  String        @id @default(uuid())
+  name                String
+  slug                String        @unique
+
+  // Status
+  status              TenantStatus  @default(ACTIVE)
+
+  // Branding & Configuration
+  botName             String        @default("Assistant")
+  systemPrompt        String?       @db.Text
+  welcomeMessage      String?
+  fallbackMessage     String?
+
+  // Limits
+  monthlyMessageLimit Int           @default(10000)
+  monthlyMessagesUsed Int           @default(0)
+
+  // Settings
+  settings            Json?
+
+  // Relations
+  users               User[]
+  conversations       Conversation[]
+  knowledgeSources    KnowledgeSource[]
+  channelConfigs      ChannelConfig[]
+  apiKeys             ApiKey[]
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([slug])
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  keyHash     String    @unique
+  keyPrefix   String
+
+  permissions Json      @default("{\"chat\": true, \"knowledge\": true, \"admin\": false}")
+
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([keyHash])
+}
+
+// ============================================
+// CHANNEL CONFIGURATION
+// ============================================
+
+model ChannelConfig {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  channel     Channel
+  enabled     Boolean   @default(true)
+
+  credentials Json
+  webhookUrl  String?
+  webhookSecret String?
+  settings    Json?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, channel])
+  @@index([tenantId])
+}
+
+enum Channel {
+  WHATSAPP
+  TELEGRAM
+  WEB
+  SLACK
+  EMAIL
+  SMS
+}
+
+// ============================================
+// USERS (End customers of tenants)
+// ============================================
+
+model User {
+  id              String    @id @default(uuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  whatsappNumber  String?
+  telegramId      String?
+  email           String?
+  webSessionId    String?
+
+  displayName     String?
+  metadata        Json?
+
+  conversations   Conversation[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastSeenAt      DateTime?
+
+  @@unique([tenantId, whatsappNumber])
+  @@unique([tenantId, telegramId])
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ============================================
+// CONVERSATIONS
+// ============================================
+
+model Conversation {
+  id                    String              @id @default(uuid())
+  tenantId              String
+  tenant                Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status                ConversationStatus  @default(BOT_ACTIVE)
+  channel               Channel
+  channelConversationId String?
+
+  metadata              Json?
+
+  messages              Message[]
+  escalation            Escalation?
+
+  startedAt             DateTime            @default(now())
+  lastActivityAt        DateTime            @default(now())
+  escalatedAt           DateTime?
+  resolvedAt            DateTime?
+  closedAt              DateTime?
+
+  @@index([tenantId, status])
+  @@index([tenantId, userId])
+  @@index([tenantId, channel])
+  @@index([lastActivityAt])
+}
+
+enum ConversationStatus {
+  BOT_ACTIVE
+  ESCALATED
+  HUMAN_ACTIVE
+  RESOLVED
+  CLOSED
+}
+
+model Message {
+  id              String       @id @default(uuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role            MessageRole
+  content         String       @db.Text
+  contentHash     String?
+
+  tokensUsed      Int?
+  confidenceScore Float?
+  knowledgeSources Json?
+
+  channelMessageId String?
+
+  hasMedia        Boolean      @default(false)
+  mediaType       String?
+  mediaUrl        String?
+
+  createdAt       DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([contentHash])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// ============================================
+// ESCALATIONS
+// ============================================
+
+model Escalation {
+  id               String            @id @default(uuid())
+  conversationId   String            @unique
+  conversation     Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  reason           EscalationReason
+  reasonDetails    String?
+
+  externalTicketId String?
+  externalSystem   String?
+
+  agentId          String?
+  agentName        String?
+
+  resolvedAt       DateTime?
+  resolutionNotes  String?
+  returnedToBot    Boolean           @default(false)
+
+  createdAt        DateTime          @default(now())
+
+  @@index([externalTicketId])
+}
+
+enum EscalationReason {
+  USER_REQUEST
+  LOW_CONFIDENCE
+  SENSITIVE_TOPIC
+  REPEATED_QUESTION
+  LONG_CONVERSATION
+  MEDIA_RECEIVED
+  AUTH_REQUIRED
+  ERROR
+}
+
+// ============================================
+// KNOWLEDGE MANAGEMENT
+// ============================================
+
+model KnowledgeSource {
+  id               String              @id @default(uuid())
+  tenantId         String
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name             String
+  type             KnowledgeSourceType
+
+  originalFilename String?
+  mimeType         String?
+  fileSize         Int?
+  storagePath      String?
+
+  sourceUrl        String?
+
+  status           IndexStatus         @default(PENDING)
+  statusMessage    String?
+
+  chunkCount       Int                 @default(0)
+  tokenCount       Int                 @default(0)
+
+  version          Int                 @default(1)
+  checksum         String?
+
+  pineconeNamespace String?
+
+  uploadedAt       DateTime            @default(now())
+  processedAt      DateTime?
+  indexedAt        DateTime?
+  lastSyncedAt     DateTime?
+
+  chunks           KnowledgeChunk[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, type])
+}
+
+enum KnowledgeSourceType {
+  PDF
+  DOCX
+  TXT
+  CSV
+  URL
+  ZENDESK
+  FRESHDESK
+  NOTION
+  CONFLUENCE
+}
+
+enum IndexStatus {
+  PENDING
+  EXTRACTING
+  CHUNKING
+  EMBEDDING
+  INDEXING
+  INDEXED
+  FAILED
+  STALE
+}
+
+model KnowledgeChunk {
+  id           String          @id @default(uuid())
+  sourceId     String
+  source       KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  text         String          @db.Text
+  tokenCount   Int
+
+  chunkIndex   Int
+  pageNumber   Int?
+  sectionTitle String?
+
+  vectorId     String          @unique
+
+  metadata     Json
+
+  createdAt    DateTime        @default(now())
+
+  @@index([sourceId])
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model AnalyticsEvent {
+  id             String    @id @default(uuid())
+  tenantId       String
+
+  eventType      String
+  channel        Channel?
+  userId         String?
+  conversationId String?
+
+  metadata       Json?
+
+  createdAt      DateTime  @default(now())
+
+  @@index([tenantId, eventType])
+  @@index([tenantId, createdAt])
+}
+
