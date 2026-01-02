@@ -1,36 +1,47 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: omniscient-postgres
+    container_name: omniscient-postgres-dev
     environment:
       POSTGRES_USER: omniscient
       POSTGRES_PASSWORD: omniscient
       POSTGRES_DB: omniscient
     ports:
-      - '5433:5432'
+      - '5432:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U omniscient']
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - omniscient-network-dev
 
   redis:
     image: redis:7-alpine
-    container_name: omniscient-redis
+    container_name: omniscient-redis-dev
     ports:
       - '6379:6379'
     volumes:
-      - redis_data:/data
+      - redis_data_dev:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - omniscient-network-dev
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_data_dev:
+  redis_data_dev:
+
+networks:
+  omniscient-network-dev:
+    driver: bridge
+
 

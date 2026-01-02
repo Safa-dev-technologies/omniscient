@@ -49,6 +49,12 @@ const envSchema = z.object({
 
   // Master API Key (optional - for tenant management)
   MASTER_API_KEY: z.string().min(20).startsWith('master_').optional(),
+
+  // Encryption (for credential storage)
+  ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/i)
+    .optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

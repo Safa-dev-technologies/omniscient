@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(pnpm lint:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(grep:*)"
     ]
   }
 }

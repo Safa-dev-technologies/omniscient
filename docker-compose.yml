@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: omniscient-postgres
+    environment:
+      POSTGRES_USER: omniscient
+      POSTGRES_PASSWORD: omniscient
+      POSTGRES_DB: omniscient
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U omniscient']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omniscient-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: omniscient-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omniscient-network
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: omniscient-app
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://omniscient:omniscient@postgres:5432/omniscient
+      REDIS_URL: redis://redis:6379
+      # Required - set these in .env or override here
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Optional
+      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/uploads
+      MASTER_API_KEY: ${MASTER_API_KEY:-}
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - omniscient-network
+    restart: unless-stopped
+
+  workers:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: omniscient-workers
+    command: node dist/workers.js
+    working_dir: /app
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://omniscient:omniscient@postgres:5432/omniscient
+      REDIS_URL: redis://redis:6379
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - omniscient-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  omniscient-network:
+    driver: bridge
+

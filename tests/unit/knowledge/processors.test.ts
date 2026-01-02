@@ -34,7 +34,7 @@ describe('Document Processors', () => {
 
     it('should have correct mime types', () => {
       expect(processor.mimeTypes).toContain('text/plain');
-      expect(processor.mimeTypes).toContain('text/csv');
+      // CSV has its own CsvProcessor, so TxtProcessor should not handle text/csv
     });
 
     it('should extract text from buffer', async () => {
@@ -150,9 +150,8 @@ describe('Document Processors', () => {
         messages: [],
       });
 
-      const { DocxProcessor } = await import(
-        '../../../src/modules/knowledge/processors/docx.processor.js'
-      );
+      const { DocxProcessor } =
+        await import('../../../src/modules/knowledge/processors/docx.processor.js');
       const processor = new DocxProcessor();
       const buffer = Buffer.from('fake docx content');
 
@@ -164,9 +163,8 @@ describe('Document Processors', () => {
     });
 
     it('should have correct mime type', async () => {
-      const { DocxProcessor } = await import(
-        '../../../src/modules/knowledge/processors/docx.processor.js'
-      );
+      const { DocxProcessor } =
+        await import('../../../src/modules/knowledge/processors/docx.processor.js');
       const processor = new DocxProcessor();
 
       expect(processor.mimeTypes).toContain(
@@ -183,11 +181,10 @@ describe('Document Processors', () => {
         info: { Title: 'Test PDF', Author: 'Test Author' },
       });
 
-      const { PdfProcessor } = await import(
-        '../../../src/modules/knowledge/processors/pdf.processor.js'
-      );
+      const { PdfProcessor } =
+        await import('../../../src/modules/knowledge/processors/pdf.processor.js');
       const processor = new PdfProcessor();
-      const buffer = Buffer.from('fake pdf content');
+      const buffer = Buffer.from('%PDF-1.4\nfake pdf content');
 
       const result = await processor.extract(buffer, 'test.pdf');
 
@@ -201,9 +198,8 @@ describe('Document Processors', () => {
     });
 
     it('should have correct mime type', async () => {
-      const { PdfProcessor } = await import(
-        '../../../src/modules/knowledge/processors/pdf.processor.js'
-      );
+      const { PdfProcessor } =
+        await import('../../../src/modules/knowledge/processors/pdf.processor.js');
       const processor = new PdfProcessor();
 
       expect(processor.mimeTypes).toContain('application/pdf');
@@ -216,11 +212,10 @@ describe('Document Processors', () => {
         info: null,
       });
 
-      const { PdfProcessor } = await import(
-        '../../../src/modules/knowledge/processors/pdf.processor.js'
-      );
+      const { PdfProcessor } =
+        await import('../../../src/modules/knowledge/processors/pdf.processor.js');
       const processor = new PdfProcessor();
-      const buffer = Buffer.from('fake pdf');
+      const buffer = Buffer.from('%PDF-1.4\nfake pdf');
 
       const result = await processor.extract(buffer, 'test.pdf');
 

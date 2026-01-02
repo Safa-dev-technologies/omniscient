@@ -4,6 +4,12 @@ export interface ExtractedDocument {
     pageCount?: number;
     title?: string;
     author?: string;
+    // CSV-specific metadata
+    rowCount?: number;
+    columnCount?: number;
+    columns?: string[];
+    isFAQ?: boolean;
+    warning?: string;
   };
 }
 

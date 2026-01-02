@@ -15,6 +15,8 @@ import { errorHandler } from './middleware/error.middleware.js';
 import { tenantRoutes } from './modules/tenant/tenant.routes.js';
 import { knowledgeRoutes } from './modules/knowledge/knowledge.routes.js';
 import { chatRoutes } from './modules/chat/chat.routes.js';
+import { channelRoutes } from './modules/channel/channel.routes.js';
+import { webhookRoutes } from './webhooks/webhook.routes.js';
 
 export async function buildServer() {
   const server = Fastify({
@@ -52,6 +54,12 @@ export async function buildServer() {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
+  // Worker health check
+  server.get('/health/workers', async () => {
+    const { getWorkerHealth } = await import('./jobs/health.js');
+    return getWorkerHealth();
+  });
+
   // API version prefix
   server.register(
     async (api) => {
@@ -59,6 +67,8 @@ export async function buildServer() {
       api.register(tenantRoutes, { prefix: '/tenants' });
       api.register(knowledgeRoutes, { prefix: '/knowledge' });
       api.register(chatRoutes, { prefix: '/chat' });
+      api.register(channelRoutes, { prefix: '/channels' });
+      api.register(webhookRoutes, { prefix: '/webhooks' });
 
       // Placeholder route
       api.get('/', async () => {
