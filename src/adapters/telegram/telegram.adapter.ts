@@ -13,7 +13,6 @@ import type {
   TelegramCallbackQuery,
   TelegramApiResponse,
   TelegramSendMessageRequest,
-  TelegramFile,
 } from './telegram.types.js';
 import { verifyWebhookSecret, getDisplayName } from './telegram.utils.js';
 import { logger } from '../../lib/logger.js';

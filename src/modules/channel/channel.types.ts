@@ -1,4 +1,4 @@
-import type { Channel, ChannelConfig } from '@prisma/client';
+import type { Channel } from '@prisma/client';
 
 /**
  * Channel configuration with masked credentials

@@ -62,8 +62,7 @@ export async function processChat(params: ProcessChatParams): Promise<ChatRespon
   });
 
   if (!conversation) {
-    conversation = await conversationService.createConversation({
-      tenantId,
+    conversation = await conversationService.createConversation(tenantId, {
       userId: user.id,
       channel: channel as Channel,
       metadata,
@@ -140,7 +139,7 @@ async function processMessage(params: {
   }
 
   // Get conversation history
-  const history = await conversationService.getConversationHistory(conversation.id);
+  const history = await conversationService.getConversationHistory(tenantId, conversation.id);
 
   // Generate response using bot engine
   const botResponse = await botEngine.generateResponse({

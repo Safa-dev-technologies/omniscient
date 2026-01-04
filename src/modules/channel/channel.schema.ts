@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { Channel } from '@prisma/client';
 
 /**
  * Channel enum schema matching Prisma enum

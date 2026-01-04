@@ -140,8 +140,7 @@ describe('Chat Service', () => {
 
       await chatService.processChat(baseParams);
 
-      expect(conversationServiceMock.createConversation).toHaveBeenCalledWith({
-        tenantId: 'tenant-1',
+      expect(conversationServiceMock.createConversation).toHaveBeenCalledWith('tenant-1', {
         userId: mockUser.id,
         channel: 'WEB',
         metadata: undefined,

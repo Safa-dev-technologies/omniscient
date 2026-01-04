@@ -11,7 +11,6 @@ import { RetryableError, NonRetryableError } from '../jobs.types.js';
 import { isRetryable, formatErrorMessage, moveToDeadLetter } from '../error-utils.js';
 import { TenantRateLimiter } from '../rate-limiter.js';
 import { redis } from '../../lib/redis.js';
-import { logProcessingMetrics } from '../metrics.js';
 
 const connection = {
   host: new URL(env.REDIS_URL).hostname,
@@ -123,35 +122,46 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
     });
 
     // Log metrics
-    logger.info({
-      sourceId,
-      tenantId,
-      fileSize: source.fileSize || 0,
-      mimeType: source.mimeType,
-      chunkCount: chunks.length,
-      timings,
-      totalTimeMs: Date.now() - startTime,
-    }, 'Document extraction complete');
+    logger.info(
+      {
+        sourceId,
+        tenantId,
+        fileSize: source.fileSize || 0,
+        mimeType: source.mimeType,
+        chunkCount: chunks.length,
+        timings,
+        totalTimeMs: Date.now() - startTime,
+      },
+      'Document extraction complete'
+    );
   } catch (error) {
     // Get source for error logging
-    const source = await prisma.knowledgeSource.findUnique({
-      where: { id: sourceId },
-    }).catch(() => null);
+    const source = await prisma.knowledgeSource
+      .findUnique({
+        where: { id: sourceId },
+      })
+      .catch(() => null);
 
     // Log error with timing
-    logger.error({
-      sourceId,
-      tenantId,
-      timings,
-      totalTimeMs: Date.now() - startTime,
-      fileSize: source?.fileSize || 0,
-      mimeType: source?.mimeType,
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      } : String(error),
-    }, 'Document processing failed');
+    logger.error(
+      {
+        sourceId,
+        tenantId,
+        timings,
+        totalTimeMs: Date.now() - startTime,
+        fileSize: source?.fileSize || 0,
+        mimeType: source?.mimeType,
+        error:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
+            : String(error),
+      },
+      'Document processing failed'
+    );
 
     // Always decrement concurrent count on error
     await rateLimiter.endJob(tenantId);
@@ -170,15 +180,17 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
     await moveToDeadLetter(job, error, 'document-processing');
 
     // Update source status
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
-      data: {
-        status: 'FAILED',
-        statusMessage: formatErrorMessage(error),
-      },
-    }).catch((updateError) => {
-      logger.error({ sourceId, error: updateError }, 'Failed to update source status');
-    });
+    await prisma.knowledgeSource
+      .update({
+        where: { id: sourceId },
+        data: {
+          status: 'FAILED',
+          statusMessage: formatErrorMessage(error),
+        },
+      })
+      .catch((updateError) => {
+        logger.error({ sourceId, error: updateError }, 'Failed to update source status');
+      });
 
     // Don't throw - job is "complete" (moved to DLQ)
     return;

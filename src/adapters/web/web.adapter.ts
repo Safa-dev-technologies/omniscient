@@ -8,12 +8,7 @@ import type {
   WebCredentials,
 } from '../adapter.types.js';
 import { createSessionManager, type SessionManager } from './web.session.js';
-import type {
-  WebIncomingMessage,
-  WebOutgoingMessage,
-  WebSession,
-  WebWidgetConfig,
-} from './web.types.js';
+import type { WebIncomingMessage, WebSession, WebWidgetConfig } from './web.types.js';
 import { logger } from '../../lib/logger.js';
 
 /**

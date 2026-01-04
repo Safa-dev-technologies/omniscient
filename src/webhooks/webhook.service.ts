@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 import { decryptJson } from '../utils/crypto.js';
-import type { Channel, Tenant } from '@prisma/client';
+import type { Channel } from '@prisma/client';
 import type { ChannelAdapter } from '../adapters/adapter.interface.js';
 import type { AdapterConfig, NormalizedMessage } from '../adapters/adapter.types.js';
 import { WhatsAppAdapter } from '../adapters/whatsapp/index.js';

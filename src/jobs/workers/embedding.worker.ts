@@ -9,7 +9,6 @@ import { RetryableError, NonRetryableError } from '../jobs.types.js';
 import { isRetryable, formatErrorMessage, moveToDeadLetter } from '../error-utils.js';
 import { TenantRateLimiter } from '../rate-limiter.js';
 import { redis } from '../../lib/redis.js';
-import { logProcessingMetrics } from '../metrics.js';
 
 const connection = {
   host: new URL(env.REDIS_URL).hostname,
@@ -27,7 +26,10 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
   const startTime = Date.now();
   let embeddingTimeMs = 0;
 
-  logger.info({ sourceId, chunkCount: chunks.length, attempt: job.attemptsMade + 1 }, 'Generating embeddings');
+  logger.info(
+    { sourceId, chunkCount: chunks.length, attempt: job.attemptsMade + 1 },
+    'Generating embeddings'
+  );
 
   // Check rate limit before processing
   const canProcess = await rateLimiter.canProcess(tenantId);
@@ -160,13 +162,16 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
       },
     });
 
-    logger.info({
-      sourceId,
-      chunkCount: chunks.length,
-      totalTokens,
-      embeddingTimeMs,
-      totalTimeMs: Date.now() - startTime,
-    }, 'Embeddings complete');
+    logger.info(
+      {
+        sourceId,
+        chunkCount: chunks.length,
+        totalTokens,
+        embeddingTimeMs,
+        totalTimeMs: Date.now() - startTime,
+      },
+      'Embeddings complete'
+    );
   } catch (error) {
     // Always decrement concurrent count on error
     await rateLimiter.endJob(tenantId);

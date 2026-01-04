@@ -1,5 +1,4 @@
 import type { Redis } from 'ioredis';
-import { redis } from '../lib/redis.js';
 import { logger } from '../lib/logger.js';
 
 export interface RateLimitConfig {
@@ -31,28 +30,40 @@ export class TenantRateLimiter {
       // Check concurrent limit
       const concurrent = await this.redis.get(concurrentKey);
       if (concurrent && parseInt(concurrent) >= this.limits.maxConcurrent) {
-        logger.debug({ tenantId, queueName: this.queueName, concurrent }, 'Rate limited: concurrent limit');
+        logger.debug(
+          { tenantId, queueName: this.queueName, concurrent },
+          'Rate limited: concurrent limit'
+        );
         return false;
       }
 
       // Check per-minute limit
       const minuteCount = await this.redis.zcount(minuteKey, now - 60000, now);
       if (minuteCount >= this.limits.maxPerMinute) {
-        logger.debug({ tenantId, queueName: this.queueName, minuteCount }, 'Rate limited: per-minute limit');
+        logger.debug(
+          { tenantId, queueName: this.queueName, minuteCount },
+          'Rate limited: per-minute limit'
+        );
         return false;
       }
 
       // Check per-hour limit
       const hourCount = await this.redis.zcount(hourKey, now - 3600000, now);
       if (hourCount >= this.limits.maxPerHour) {
-        logger.debug({ tenantId, queueName: this.queueName, hourCount }, 'Rate limited: per-hour limit');
+        logger.debug(
+          { tenantId, queueName: this.queueName, hourCount },
+          'Rate limited: per-hour limit'
+        );
         return false;
       }
 
       return true;
     } catch (error) {
       // Fail open - allow processing if Redis is unavailable
-      logger.warn({ tenantId, queueName: this.queueName, error }, 'Rate limiter error, allowing processing');
+      logger.warn(
+        { tenantId, queueName: this.queueName, error },
+        'Rate limiter error, allowing processing'
+      );
       return true;
     }
   }

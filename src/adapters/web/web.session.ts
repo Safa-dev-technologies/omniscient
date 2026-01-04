@@ -217,7 +217,7 @@ class SessionManager {
    * Clean up expired sessions
    * Returns number of sessions cleaned
    */
-  async cleanExpiredSessions(maxAgeMinutes: number): Promise<number> {
+  async cleanExpiredSessions(_maxAgeMinutes: number): Promise<number> {
     // This is a simplified implementation
     // In production with Redis, you'd use TTL-based cleanup
     // For memory storage, we check expiration on get

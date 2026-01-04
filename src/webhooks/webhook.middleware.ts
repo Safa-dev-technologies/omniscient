@@ -1,4 +1,4 @@
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 import type { Channel, Tenant } from '@prisma/client';

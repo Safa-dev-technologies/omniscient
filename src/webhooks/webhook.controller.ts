@@ -1,7 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
-import type { Channel } from '@prisma/client';
 import { processIncomingMessage, handleError, getAdapter } from './webhook.service.js';
 import {
   resolveTenantFromWebhook,

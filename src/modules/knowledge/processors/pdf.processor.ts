@@ -76,21 +76,23 @@ export class PdfProcessor implements DocumentProcessor {
   }
 
   private cleanText(text: string): string {
-    return text
-      // Remove excessive whitespace
-      .replace(/\s+/g, ' ')
-      // Remove null characters
-      .replace(/\0/g, '')
-      // Fix broken ligatures
-      .replace(/ﬁ/g, 'fi')
-      .replace(/ﬂ/g, 'fl')
-      .replace(/ﬀ/g, 'ff')
-      // Normalize quotes
-      .replace(/[""]/g, '"')
-      .replace(/['']/g, "'")
-      // Remove page break markers
-      .replace(/\f/g, '\n\n')
-      .trim();
+    return (
+      text
+        // Remove excessive whitespace
+        .replace(/\s+/g, ' ')
+        // Remove null characters
+        .replace(/\0/g, '')
+        // Fix broken ligatures
+        .replace(/ﬁ/g, 'fi')
+        .replace(/ﬂ/g, 'fl')
+        .replace(/ﬀ/g, 'ff')
+        // Normalize quotes
+        .replace(/[""]/g, '"')
+        .replace(/['']/g, "'")
+        // Remove page break markers
+        .replace(/\f/g, '\n\n')
+        .trim()
+    );
   }
 }
 

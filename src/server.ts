@@ -16,6 +16,8 @@ import { tenantRoutes } from './modules/tenant/tenant.routes.js';
 import { knowledgeRoutes } from './modules/knowledge/knowledge.routes.js';
 import { chatRoutes } from './modules/chat/chat.routes.js';
 import { channelRoutes } from './modules/channel/channel.routes.js';
+import { conversationRoutes } from './modules/conversation/conversation.routes.js';
+import { escalationRoutes } from './modules/escalation/escalation.routes.js';
 import { webhookRoutes } from './webhooks/webhook.routes.js';
 
 export async function buildServer() {
@@ -68,6 +70,8 @@ export async function buildServer() {
       api.register(knowledgeRoutes, { prefix: '/knowledge' });
       api.register(chatRoutes, { prefix: '/chat' });
       api.register(channelRoutes, { prefix: '/channels' });
+      api.register(conversationRoutes, { prefix: '/conversations' });
+      api.register(escalationRoutes, { prefix: '/escalations' });
       api.register(webhookRoutes, { prefix: '/webhooks' });
 
       // Placeholder route

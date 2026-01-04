@@ -1,6 +1,6 @@
 /**
  * Mock utilities for external services in integration tests
- * 
+ *
  * Note: Integration tests use REAL services, but we may want to
  * mock certain external APIs (like OpenAI) in some scenarios
  * to reduce costs and improve test speed.
@@ -13,7 +13,9 @@ import { vi } from 'vitest';
  * Returns deterministic mock embeddings
  */
 export function mockOpenAIEmbeddings() {
-  const mockEmbedding = Array(1536).fill(0).map(() => Math.random() - 0.5);
+  const mockEmbedding = Array(1536)
+    .fill(0)
+    .map(() => Math.random() - 0.5);
 
   vi.mock('../../../src/lib/llm/index.js', async () => {
     const actual = await vi.importActual('../../../src/lib/llm/index.js');

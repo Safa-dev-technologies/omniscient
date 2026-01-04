@@ -1,12 +1,8 @@
 import { Queue, Job } from 'bullmq';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { prisma } from '../../src/lib/prisma.js';
 import { TEST_CONFIG as CONFIG } from './setup.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 /**
  * Sleep utility
@@ -50,9 +46,7 @@ export async function waitForJobCompletion(
         const failed = failedJobs.find((j) => j.data.sourceId === sourceId);
 
         if (failed) {
-          throw new Error(
-            `Job for ${sourceId} failed: ${failed.failedReason || 'Unknown error'}`
-          );
+          throw new Error(`Job for ${sourceId} failed: ${failed.failedReason || 'Unknown error'}`);
         }
       }
     }
@@ -206,10 +200,7 @@ export async function waitForAllJobs(
   const pollInterval = 1000;
 
   while (Date.now() - start < timeout) {
-    const [waiting, active] = await Promise.all([
-      queue.getWaitingCount(),
-      queue.getActiveCount(),
-    ]);
+    const [waiting, active] = await Promise.all([queue.getWaitingCount(), queue.getActiveCount()]);
 
     if (waiting === 0 && active === 0) {
       return;
@@ -218,10 +209,7 @@ export async function waitForAllJobs(
     await sleep(pollInterval);
   }
 
-  const [waiting, active] = await Promise.all([
-    queue.getWaitingCount(),
-    queue.getActiveCount(),
-  ]);
+  const [waiting, active] = await Promise.all([queue.getWaitingCount(), queue.getActiveCount()]);
 
   throw new Error(
     `Queue still has ${waiting} waiting and ${active} active jobs after ${timeout}ms`
@@ -231,10 +219,7 @@ export async function waitForAllJobs(
 /**
  * Get job by source ID from any state
  */
-export async function findJobBySourceId(
-  queue: Queue,
-  sourceId: string
-): Promise<Job | null> {
+export async function findJobBySourceId(queue: Queue, sourceId: string): Promise<Job | null> {
   const states: Array<'completed' | 'active' | 'waiting' | 'failed' | 'delayed'> = [
     'completed',
     'active',
@@ -277,7 +262,8 @@ export function createMinimalPDF(): Buffer {
       return readFileSync(samplePath);
     } catch {
       // Final fallback to base64-encoded PDF if no fixtures exist
-      const base64PDF = 'JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA0IDAgUgo+Pgo+PgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9CYXNlRm9udCAvSGVsdmV0aWNhCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDQKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgowIDEwMCBUZAooVGVzdCBQREYgQ29udGVudCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAzMDYgMDAwMDAgbiAKMDAwMDAwMDM1MyAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjQyNAolJUVPRg==';
+      const base64PDF =
+        'JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA0IDAgUgo+Pgo+PgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9CYXNlRm9udCAvSGVsdmV0aWNhCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDQKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgowIDEwMCBUZAooVGVzdCBQREYgQ29udGVudCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAzMDYgMDAwMDAgbiAKMDAwMDAwMDM1MyAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjQyNAolJUVPRg==';
       return Buffer.from(base64PDF, 'base64');
     }
   }
@@ -324,9 +310,7 @@ export async function verifySourceState(
   }
 
   if (source.status !== expectedStatus) {
-    throw new Error(
-      `Expected status ${expectedStatus}, got ${source.status}`
-    );
+    throw new Error(`Expected status ${expectedStatus}, got ${source.status}`);
   }
 
   if (options?.minChunkCount !== undefined) {
@@ -340,18 +324,14 @@ export async function verifySourceState(
   if (options?.hasChunks !== undefined) {
     const hasChunks = source.chunks.length > 0;
     if (hasChunks !== options.hasChunks) {
-      throw new Error(
-        `Expected hasChunks=${options.hasChunks}, got ${hasChunks}`
-      );
+      throw new Error(`Expected hasChunks=${options.hasChunks}, got ${hasChunks}`);
     }
   }
 
   if (options?.hasVectorId) {
     const chunksWithoutVectorId = source.chunks.filter((c) => !c.vectorId);
     if (chunksWithoutVectorId.length > 0) {
-      throw new Error(
-        `${chunksWithoutVectorId.length} chunks missing vectorId`
-      );
+      throw new Error(`${chunksWithoutVectorId.length} chunks missing vectorId`);
     }
   }
 }

@@ -1,6 +1,5 @@
 import type {
   WhatsAppWebhookPayload,
-  WhatsAppMessage,
   WhatsAppApiResponse,
 } from '../../src/adapters/whatsapp/whatsapp.types.js';
 

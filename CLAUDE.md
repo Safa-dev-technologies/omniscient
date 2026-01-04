@@ -97,7 +97,7 @@ docker compose down      # Stop services
 
 ## Lead Engineer Role
 
-You are acting as a lead software engineer managing a team of capable but inexperienced agents. Your role is to **delegate, guide, and review**—not write code unless told to do so directly.
+You are acting as a lead software engineer managing a team of capable but inexperienced agents. Your role is to **delegate, guide, and review**—not write code unless told to do so directly but make sure the code is wriiten as you would have written it yourself. Do not be afraid to correct and instruct.
 
 ### Task Delegation
 - Break down features into specific, actionable tasks with clear acceptance criteria
@@ -131,3 +131,98 @@ Before approving any implementation:
 - Identify missing error paths and unhappy flows
 - Question assumptions—ask "what happens if X fails/is empty/is null?"
 - Push back on over-engineering; prefer simple solutions that solve the current problem
+
+---
+
+## Progress Report
+
+**Last Updated:** 2026-01-03
+
+### Phase 1: Foundation (MVP) - COMPLETE ✅
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Project setup (Fastify + TypeScript + Prisma) | ✅ Done | |
+| Database schema + migrations | ✅ Done | Prisma schema complete |
+| Tenant management (CRUD) | ✅ Done | `src/modules/tenant/` |
+| API key authentication | ✅ Done | `tenant.auth.ts` |
+| PDF upload + extraction | ✅ Done | `processors/pdf.processor.ts` |
+| Chunking + embedding pipeline | ✅ Done | `chunkers/`, `embedding.worker.ts` |
+| Pinecone integration | ✅ Done | `src/lib/pinecone.ts` |
+| Bot engine (basic) | ✅ Done | `bot.engine.ts`, `bot.prompts.ts`, `bot.escalation.ts` |
+| Simple chat endpoint | ✅ Done | `src/modules/chat/` |
+| Web adapter (REST) | ✅ Done | `src/adapters/web/` |
+
+### Phase 2: Channels - IN PROGRESS 🔄
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Channel config management | ✅ Done | `src/modules/channel/` |
+| WhatsApp adapter | ✅ Done | `src/adapters/whatsapp/` |
+| Telegram adapter | ✅ Done | `src/adapters/telegram/` |
+| Webhook handlers | ✅ Done | `src/webhooks/` |
+| Conversation persistence | 🔄 Active | `src/modules/conversation/` - implementing controller, routes, state-machine |
+| Message history | 🔄 Active | Part of conversation module |
+| Escalation module | 🔄 Active | `src/modules/escalation/` - new module being built |
+
+**Current Work (Git Status):**
+- Modified: `chat.service.ts`, `conversation.service.ts`, `server.ts`
+- New files: `conversation.controller.ts`, `conversation.routes.ts`, `conversation.schema.ts`, `conversation.state-machine.ts`
+- New module: `src/modules/escalation/` (routes, controller, service, schema, ticketing integrations)
+
+### Phase 3: Knowledge Expansion - PARTIAL ⬜
+
+| Task | Status | Notes |
+|------|--------|-------|
+| DOCX processor | ✅ Done | `processors/docx.processor.ts` |
+| CSV/FAQ processor | ✅ Done | `processors/csv.processor.ts` |
+| TXT processor | ✅ Done | `processors/txt.processor.ts` |
+| URL crawler | ⬜ Not started | |
+| Zendesk connector | 🔄 Partial | `escalation/ticketing/zendesk.ts` (ticketing, not knowledge) |
+| Notion connector | ⬜ Not started | |
+| Sync scheduling | ⬜ Not started | |
+
+### Phase 4: Admin Dashboard - NOT STARTED ⬜
+
+### Phase 5: Enterprise Features - NOT STARTED ⬜
+
+### Test Coverage
+
+| Area | Status |
+|------|--------|
+| Unit: Tenant | ✅ |
+| Unit: Bot | ✅ |
+| Unit: Chat | ✅ |
+| Unit: Channel | ✅ |
+| Unit: Knowledge | ✅ |
+| Unit: Adapters (Web, WhatsApp, Telegram) | ✅ |
+| Unit: Webhooks | ✅ |
+| Unit: Conversation | ✅ |
+| Integration: Pipeline | ✅ |
+| Integration: Health | ✅ |
+
+### Next Steps
+
+**See [TASKS.md](./TASKS.md) for detailed task specifications with acceptance criteria.**
+
+#### Summary
+| Task | Priority | Status | Blocked By |
+|------|----------|--------|------------|
+| TASK-001: Fix lint errors | P0 | Open | - |
+| TASK-002: Escalation service tests | P0 | Open | - |
+| TASK-003: Escalation controller tests | P0 | Open | - |
+| TASK-004: Conversation integration tests | P1 | Open | - |
+| TASK-005: Escalation integration tests | P1 | Open | - |
+| TASK-006: Run quality gates | P0 | Open | 001-003 |
+| TASK-007: Commit Phase 2 | P0 | Open | 006 |
+| TASK-008: URL crawler (Phase 3) | P2 | Open | 007 |
+| TASK-009: Notion connector (Phase 3) | P2 | Open | 007 |
+| TASK-010: Sync scheduling (Phase 3) | P2 | Open | 007 |
+
+### Known Issues
+
+| Issue | Status | Notes |
+|-------|--------|-------|
+| Lint: 850 errors (752 auto-fixable) | 🔴 Open | Mostly prettier formatting |
+| Integration tests require running DB | ⚠️ Expected | Run `docker compose up -d` first |
+| Missing escalation unit tests | 🔴 Open | Need service + controller tests |

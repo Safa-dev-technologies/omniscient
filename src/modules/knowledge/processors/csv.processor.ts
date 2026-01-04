@@ -1,13 +1,5 @@
 import type { DocumentProcessor, ExtractedDocument } from './processor.interface.js';
-import { NonRetryableError } from '../../../jobs/jobs.types.js';
 import { logger } from '../../../lib/logger.js';
-
-interface CSVProcessorOptions {
-  questionColumn?: string; // Default: 'question', 'Q', 'Question'
-  answerColumn?: string; // Default: 'answer', 'A', 'Answer'
-  delimiter?: string; // Default: ',' (auto-detect)
-  hasHeader?: boolean; // Default: true
-}
 
 interface ExtractedCSV extends ExtractedDocument {
   metadata: {
@@ -21,7 +13,7 @@ interface ExtractedCSV extends ExtractedDocument {
 export class CsvProcessor implements DocumentProcessor {
   mimeTypes = ['text/csv', 'application/csv'];
 
-  async extract(buffer: Buffer, filename: string): Promise<ExtractedDocument> {
+  async extract(buffer: Buffer, _filename: string): Promise<ExtractedDocument> {
     const content = buffer.toString('utf-8');
 
     // Handle empty CSV
@@ -139,12 +131,8 @@ export class CsvProcessor implements DocumentProcessor {
     const qPatterns = ['question', 'q', 'query', 'ask', 'faq'];
     const aPatterns = ['answer', 'a', 'response', 'reply'];
 
-    const qIndex = headers.findIndex((h) =>
-      qPatterns.some((p) => h.toLowerCase().includes(p))
-    );
-    const aIndex = headers.findIndex((h) =>
-      aPatterns.some((p) => h.toLowerCase().includes(p))
-    );
+    const qIndex = headers.findIndex((h) => qPatterns.some((p) => h.toLowerCase().includes(p)));
+    const aIndex = headers.findIndex((h) => aPatterns.some((p) => h.toLowerCase().includes(p)));
 
     if (qIndex !== -1 && aIndex !== -1) {
       return { q: qIndex, a: aIndex };

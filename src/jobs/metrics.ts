@@ -19,7 +19,8 @@ export function logProcessingMetrics(metrics: ProcessingMetrics): void {
   const derivedMetrics = {
     tokensPerChunk: metrics.chunkCount > 0 ? metrics.tokenCount / metrics.chunkCount : 0,
     bytesPerSecond: metrics.totalTimeMs > 0 ? metrics.fileSize / (metrics.totalTimeMs / 1000) : 0,
-    embedsPerSecond: metrics.embeddingTimeMs > 0 ? metrics.chunkCount / (metrics.embeddingTimeMs / 1000) : 0,
+    embedsPerSecond:
+      metrics.embeddingTimeMs > 0 ? metrics.chunkCount / (metrics.embeddingTimeMs / 1000) : 0,
   };
 
   logger.info(

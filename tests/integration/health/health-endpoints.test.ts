@@ -101,8 +101,12 @@ describe('Health & Observability Integration', () => {
     const health = await getWorkerHealth();
 
     // Verify queue counts are reported
-    expect(health.queues.document.waiting + health.queues.document.active).toBeGreaterThanOrEqual(0);
-    expect(health.queues.embedding.waiting + health.queues.embedding.active).toBeGreaterThanOrEqual(0);
+    expect(health.queues.document.waiting + health.queues.document.active).toBeGreaterThanOrEqual(
+      0
+    );
+    expect(health.queues.embedding.waiting + health.queues.embedding.active).toBeGreaterThanOrEqual(
+      0
+    );
 
     // Cleanup
     await documentQueue.obliterate({ force: true }).catch(() => {});

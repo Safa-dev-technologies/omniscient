@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import { env } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -11,8 +10,6 @@ import { logger } from '../lib/logger.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96 bits for GCM
-const TAG_LENGTH = 16; // 128 bits for GCM tag
-const SALT_LENGTH = 32;
 
 /**
  * Get encryption key from environment

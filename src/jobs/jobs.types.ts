@@ -30,7 +30,10 @@ export interface DeadLetterJob {
  * Retryable errors are transient failures that may succeed on retry
  */
 export class RetryableError extends Error {
-  constructor(message: string, public readonly cause?: Error) {
+  constructor(
+    message: string,
+    public readonly cause?: Error
+  ) {
     super(message);
     this.name = 'RetryableError';
     if (cause) {
@@ -43,7 +46,10 @@ export class RetryableError extends Error {
  * Non-retryable errors are permanent failures that won't succeed on retry
  */
 export class NonRetryableError extends Error {
-  constructor(message: string, public readonly cause?: Error) {
+  constructor(
+    message: string,
+    public readonly cause?: Error
+  ) {
     super(message);
     this.name = 'NonRetryableError';
     if (cause) {

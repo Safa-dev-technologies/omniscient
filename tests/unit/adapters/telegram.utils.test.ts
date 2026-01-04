@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import crypto from 'node:crypto';
 import {
   verifyWebhookSecret,
   getDisplayName,

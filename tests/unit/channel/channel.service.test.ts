@@ -5,7 +5,6 @@ import {
   mockTelegramConfig,
   mockWebConfig,
   mockWhatsAppCredentials,
-  mockTelegramCredentials,
   mockWebCredentials,
   mockEncryptedCredentials,
 } from '../../fixtures/channel.fixtures.js';

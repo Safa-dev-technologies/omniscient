@@ -1,4 +1,3 @@
-import { beforeAll, afterAll, beforeEach } from 'vitest';
 import { prisma } from '../../src/lib/prisma.js';
 import { documentQueue, embeddingQueue, deadLetterQueue } from '../../src/jobs/queue.js';
 import { redis } from '../../src/lib/redis.js';
@@ -68,11 +67,13 @@ export async function globalTeardown() {
     });
 
     // Delete test tenant
-    await prisma.tenant.delete({
-      where: { id: TEST_CONFIG.tenantId },
-    }).catch(() => {
-      // Ignore if already deleted
-    });
+    await prisma.tenant
+      .delete({
+        where: { id: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {
+        // Ignore if already deleted
+      });
 
     // Clean up Pinecone namespace
     try {

@@ -12,7 +12,6 @@ import type {
 import type {
   WhatsAppWebhookPayload,
   WhatsAppMessage,
-  WhatsAppStatus,
   WhatsAppSendTextRequest,
   WhatsAppSendInteractiveRequest,
   WhatsAppApiResponse,

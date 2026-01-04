@@ -107,4 +107,13 @@ export interface ChannelAdapter {
    * @returns true if adapter is healthy, false otherwise
    */
   isHealthy?(): Promise<boolean>;
+
+  /**
+   * Validate origin for CORS/security checks
+   * Optional - used by Web adapter to validate allowed origins
+   *
+   * @param origin - Origin string from request headers
+   * @returns true if origin is allowed, false otherwise
+   */
+  validateOrigin?(origin: string): boolean;
 }

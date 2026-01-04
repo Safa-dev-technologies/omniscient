@@ -89,10 +89,9 @@ async function handleCorsPreflightWeb(
 
   try {
     const { getAdapter } = await import('./webhook.service.js');
-    const { WebAdapter } = await import('../adapters/web/index.js');
-    const adapter = (await getAdapter(tenant.id, 'WEB')) as InstanceType<typeof WebAdapter>;
+    const adapter = await getAdapter(tenant.id, 'WEB');
 
-    if (!adapter.validateOrigin(origin)) {
+    if (adapter.validateOrigin && !adapter.validateOrigin(origin)) {
       return reply.status(403).send();
     }
 
