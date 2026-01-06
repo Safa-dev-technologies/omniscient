@@ -47,6 +47,11 @@ const envSchema = z.object({
   // API
   API_VERSION: z.string().default('v1'),
 
+  // Sync Scheduling
+  SYNC_DEFAULT_INTERVAL_HOURS: z.coerce.number().default(24),
+  SYNC_MIN_INTERVAL_HOURS: z.coerce.number().default(1),
+  SYNC_SCHEDULER_INTERVAL: z.coerce.number().default(300), // 5 minutes
+
   // Master API Key (optional - for tenant management)
   MASTER_API_KEY: z.string().min(20).startsWith('master_').optional(),
 

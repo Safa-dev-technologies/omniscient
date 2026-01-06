@@ -4,6 +4,8 @@ export interface ExtractedDocument {
     pageCount?: number;
     title?: string;
     author?: string;
+    description?: string;
+    url?: string;
     // CSV-specific metadata
     rowCount?: number;
     columnCount?: number;

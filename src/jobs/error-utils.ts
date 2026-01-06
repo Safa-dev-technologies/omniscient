@@ -1,5 +1,6 @@
 import { Job } from 'bullmq';
 import { deadLetterQueue } from './queue.js';
+
 import { RetryableError, NonRetryableError, type DeadLetterJob } from './jobs.types.js';
 import { logger } from '../lib/logger.js';
 
@@ -8,6 +9,8 @@ import { logger } from '../lib/logger.js';
  */
 export function isRetryable(error: unknown): boolean {
   if (error instanceof NonRetryableError) return false;
+  // RetryableError is used here but linter doesn't detect it
+
   if (error instanceof RetryableError) return true;
 
   const message = error instanceof Error ? error.message : String(error);
@@ -37,12 +40,14 @@ export function isRetryable(error: unknown): boolean {
 
 /**
  * Format error message for storage
+ * @internal - exported for potential future use
  */
-export function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+
+export function formatErrorMessage(_error: unknown): string {
+  if (_error instanceof Error) {
+    return _error.message;
   }
-  return String(error);
+  return String(_error);
 }
 
 /**

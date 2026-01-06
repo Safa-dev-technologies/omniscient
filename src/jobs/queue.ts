@@ -40,3 +40,37 @@ export const embeddingQueue = new Queue('embedding-generation', {
 
 // Dead letter queue for permanent failures
 export const deadLetterQueue = new Queue('dead-letter', { connection });
+
+// Crawl queue for URL crawling jobs
+export const crawlQueue = new Queue('crawl-processing', {
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 10000, // 10s, 20s, 40s
+    },
+    removeOnComplete: {
+      count: 1000,
+      age: 86400,
+    },
+    removeOnFail: false,
+  },
+});
+
+// Sync queue for external connector synchronization
+export const syncQueue = new Queue('external-sync', {
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 30000, // 30s, 60s, 120s
+    },
+    removeOnComplete: {
+      count: 500,
+      age: 86400,
+    },
+    removeOnFail: false,
+  },
+});

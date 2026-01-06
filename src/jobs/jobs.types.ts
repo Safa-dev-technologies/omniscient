@@ -26,6 +26,37 @@ export interface DeadLetterJob {
   failedAt: string;
 }
 
+export interface CrawlOptions {
+  crawlSitemap: boolean;
+  maxDepth: number;
+  maxPages: number;
+  includePatterns?: string[];
+  excludePatterns?: string[];
+}
+
+export interface CrawlUrlJob {
+  type: 'CRAWL_URL';
+  sourceId: string;
+  tenantId: string;
+  url: string;
+  options: CrawlOptions;
+}
+
+export interface CrawlPageJob {
+  type: 'CRAWL_PAGE';
+  sourceId: string;
+  tenantId: string;
+  url: string;
+  depth: number;
+}
+
+export interface SyncSourceJob {
+  type: 'SYNC_SOURCE';
+  sourceId: string;
+  tenantId: string;
+  sourceType: string;
+}
+
 /**
  * Retryable errors are transient failures that may succeed on retry
  */

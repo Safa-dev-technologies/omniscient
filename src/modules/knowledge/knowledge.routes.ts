@@ -42,4 +42,34 @@ export async function knowledgeRoutes(fastify: FastifyInstance) {
     preHandler: requirePermission('knowledge'),
     handler: controller.searchKnowledge,
   });
+
+  // Crawl URL
+  fastify.post('/url', {
+    preHandler: requirePermission('knowledge'),
+    handler: controller.crawlUrl,
+  });
+
+  // Get crawl status
+  fastify.get('/sources/:id/crawl-status', {
+    preHandler: requirePermission('knowledge'),
+    handler: controller.getCrawlStatus,
+  });
+
+  // Cancel crawl
+  fastify.post('/sources/:id/cancel-crawl', {
+    preHandler: requirePermission('knowledge'),
+    handler: controller.cancelCrawl,
+  });
+
+  // Connect Notion workspace
+  fastify.post('/connect/notion', {
+    preHandler: requirePermission('knowledge'),
+    handler: controller.connectNotion,
+  });
+
+  // Trigger manual sync
+  fastify.post('/sources/:id/sync', {
+    preHandler: requirePermission('knowledge'),
+    handler: controller.syncSource,
+  });
 }

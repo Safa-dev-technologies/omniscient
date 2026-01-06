@@ -1,282 +1,557 @@
 # Omniscient - Task Board
 
-**Last Updated:** 2026-01-03
-**Current Phase:** Phase 2 (Channels) - Finishing Up
+**Last Updated:** 2026-01-04
+**Current Phase:** Phase 3 (Knowledge Expansion)
 
 ---
 
-## TASK-001: Fix Lint Errors
-**Priority:** P0 | **Estimate:** Quick | **Status:** Open
-
-### Description
-Auto-fix 752 prettier formatting errors across the codebase.
-
-### Instructions
-```bash
-pnpm lint:fix
-```
-
-### Acceptance Criteria
-- [ ] `pnpm lint` passes with 0 errors
-- [ ] No functional code changes (formatting only)
-- [ ] Verify `pnpm typecheck` still passes after fix
-
-### Notes
-- Remaining ~50 warnings are acceptable
-- If any non-auto-fixable errors remain, fix manually (likely unused imports in test files)
-
----
-
-## TASK-002: Add Escalation Service Unit Tests
+## TASK-008A: Create URL Knowledge Endpoint
 **Priority:** P0 | **Estimate:** Medium | **Status:** Open
 
 ### Description
-Create comprehensive unit tests for `escalation.service.ts`.
+Create API endpoint for submitting URLs to crawl and ingest into knowledge base.
 
-### Files to Create
-- `tests/unit/escalation/escalation.service.test.ts`
+### Files to Modify
+- `src/modules/knowledge/knowledge.routes.ts` - Add POST `/url` route
+- `src/modules/knowledge/knowledge.controller.ts` - Add `crawlUrl` handler
+- `src/modules/knowledge/knowledge.service.ts` - Add `createUrlSource()` function
+- `src/modules/knowledge/knowledge.schema.ts` - Add `crawlUrlSchema`
 
-### Reference Implementation
-Follow the pattern in `tests/unit/conversation/conversation.service.test.ts`
-
-### Functions to Test
-| Function | Test Cases |
-|----------|------------|
-| `detectEscalation()` | media triggers escalation, user request patterns, sensitive topics, low confidence, repeated questions, no escalation when conditions not met |
-| `createEscalation()` | success case, conversation not found, escalation already exists, transaction rollback on failure |
-| `autoEscalate()` | triggers escalation when conditions met, returns existing escalation if already exists, returns false when no trigger |
-| `getEscalation()` | returns escalation with relations, throws when not found, respects tenant isolation |
-| `listEscalations()` | pagination works, filters by reason/status/system, respects tenant isolation |
-| `updateEscalation()` | updates fields, throws when not found |
-| `resolveEscalation()` | sets resolvedAt, updates conversation status, handles returnedToBot flag, throws when already resolved |
-| `createEscalationTicket()` | creates external ticket, updates escalation with ticket ID |
-
-### Mocking Requirements
-- Mock `prisma` client (use pattern from existing tests)
-- Mock `../bot/bot.escalation.js` functions
-- Mock `./ticketing/index.js` for external ticket creation
-
-### Acceptance Criteria
-- [ ] All functions have test coverage
-- [ ] Tests cover happy path and error cases
-- [ ] Tenant isolation verified in relevant tests
-- [ ] Tests pass with `vitest run tests/unit/escalation/`
-
----
-
-## TASK-003: Add Escalation Controller Unit Tests
-**Priority:** P0 | **Estimate:** Medium | **Status:** Open
-
-### Description
-Create unit tests for `escalation.controller.ts` request handlers.
-
-### Files to Create
-- `tests/unit/escalation/escalation.controller.test.ts`
-
-### Reference Implementation
-Follow the pattern in `tests/unit/conversation/conversation.controller.test.ts` or `tests/unit/chat/chat.controller.test.ts`
-
-### Endpoints to Test
-| Endpoint | Test Cases |
-|----------|------------|
-| `POST /` (createEscalation) | 201 on success, 404 conversation not found, 409 escalation exists, validates input schema |
-| `GET /` (listEscalations) | returns paginated list, applies query filters |
-| `GET /:id` (getEscalation) | returns escalation, 404 when not found |
-| `PATCH /:id` (updateEscalation) | updates and returns, 404 when not found |
-| `POST /:id/resolve` (resolveEscalation) | resolves escalation, 404 not found, 400 already resolved |
-| `POST /:id/ticket` (createTicket) | creates ticket, 404 not found, 400 unsupported system |
-
-### Mocking Requirements
-- Mock `escalation.service.js` functions
-- Mock Fastify request/reply objects
-- Mock `request.tenant` with test tenant ID
-
-### Acceptance Criteria
-- [ ] All controller functions tested
-- [ ] HTTP status codes verified
-- [ ] Error responses match expected format
-- [ ] Zod schema validation tested
-- [ ] Tests pass with `vitest run tests/unit/escalation/`
-
----
-
-## TASK-004: Add Conversation Integration Tests
-**Priority:** P1 | **Estimate:** Medium | **Status:** Open
-
-### Description
-Create integration tests for conversation API endpoints.
-
-### Files to Create
-- `tests/integration/conversation/conversation-api.test.ts`
-
-### Reference Implementation
-Follow patterns in `tests/integration/pipeline/e2e-pipeline.test.ts`
-
-### Prerequisites
-- Database running (`docker compose up -d`)
-- Test tenant and API key available
-
-### Endpoints to Test
-| Method | Endpoint | Test Cases |
-|--------|----------|------------|
-| POST | `/v1/conversations` | creates conversation, validates userId exists |
-| GET | `/v1/conversations` | lists with pagination, filters by status/channel |
-| GET | `/v1/conversations/:id` | returns with messages and escalation |
-| PATCH | `/v1/conversations/:id` | updates metadata, transitions status |
-| POST | `/v1/conversations/:id/transition` | valid transitions work, invalid transitions rejected |
-| GET | `/v1/conversations/:id/history` | returns messages in order |
-| DELETE | `/v1/conversations/:id` | closes conversation |
-
-### Test Flow
-1. Create test tenant and user in beforeAll
-2. Test CRUD operations
-3. Test state machine transitions (BOT_ACTIVE -> ESCALATED -> RESOLVED -> CLOSED)
-4. Verify tenant isolation (can't access other tenant's conversations)
-5. Cleanup in afterAll
-
-### Acceptance Criteria
-- [ ] All endpoints tested
-- [ ] State machine transitions verified
-- [ ] Tenant isolation verified
-- [ ] Auth required on all endpoints
-- [ ] Tests pass with `vitest run tests/integration/conversation/`
-
----
-
-## TASK-005: Add Escalation Integration Tests
-**Priority:** P1 | **Estimate:** Medium | **Status:** Open
-
-### Description
-Create integration tests for escalation API endpoints.
-
-### Files to Create
-- `tests/integration/escalation/escalation-api.test.ts`
-
-### Endpoints to Test
-| Method | Endpoint | Test Cases |
-|--------|----------|------------|
-| POST | `/v1/escalations` | creates escalation, updates conversation status |
-| GET | `/v1/escalations` | lists with filters, pagination |
-| GET | `/v1/escalations/:id` | returns with conversation |
-| PATCH | `/v1/escalations/:id` | updates agent info |
-| POST | `/v1/escalations/:id/resolve` | resolves, updates conversation status |
-| POST | `/v1/escalations/:id/ticket` | creates external ticket (mock external API) |
-
-### Test Flow
-1. Create test tenant, user, conversation in beforeAll
-2. Create escalation -> verify conversation status = ESCALATED
-3. Update escalation with agent info
-4. Resolve escalation -> verify conversation status changes
-5. Test returnedToBot = true vs false behavior
-6. Cleanup in afterAll
-
-### Acceptance Criteria
-- [ ] All endpoints tested
-- [ ] Conversation status sync verified
-- [ ] Tenant isolation verified
-- [ ] Tests pass with `vitest run tests/integration/escalation/`
-
----
-
-## TASK-006: Run Quality Gates
-**Priority:** P0 | **Estimate:** Quick | **Status:** Blocked by TASK-001,002,003
-
-### Description
-Run all quality checks and ensure they pass.
-
-### Instructions
-```bash
-# Start database first
-docker compose up -d
-
-# Run all checks
-pnpm typecheck && pnpm lint && pnpm test:run
+### Schema Definition
+```typescript
+const crawlUrlSchema = z.object({
+  url: z.string().url(),
+  name: z.string().optional(),
+  options: z.object({
+    crawlSitemap: z.boolean().default(false),
+    maxDepth: z.number().int().min(0).max(3).default(0),
+    maxPages: z.number().int().min(1).max(100).default(10),
+    includePatterns: z.array(z.string()).optional(),
+    excludePatterns: z.array(z.string()).optional(),
+  }).optional(),
+});
 ```
 
-### Acceptance Criteria
-- [ ] `pnpm typecheck` - 0 errors
-- [ ] `pnpm lint` - 0 errors (warnings OK)
-- [ ] `pnpm test:run` - all tests pass
+### Endpoint
+`POST /v1/knowledge/url`
 
----
-
-## TASK-007: Commit Phase 2 Work
-**Priority:** P0 | **Estimate:** Quick | **Status:** Blocked by TASK-006
-
-### Description
-Commit all Phase 2 (Channels) work including conversation and escalation modules.
-
-### Files to Stage
-```
-src/modules/conversation/conversation.controller.ts
-src/modules/conversation/conversation.routes.ts
-src/modules/conversation/conversation.schema.ts
-src/modules/conversation/conversation.state-machine.ts
-src/modules/conversation/conversation.service.ts (modified)
-src/modules/chat/chat.service.ts (modified)
-src/modules/escalation/ (entire directory)
-src/server.ts (modified)
-tests/unit/escalation/
-tests/integration/conversation/
-tests/integration/escalation/
-CLAUDE.md (modified)
-```
-
-### Commit Message Template
-```
-feat: complete conversation management and escalation modules
-
-- Add conversation CRUD with state machine transitions
-- Add escalation detection, creation, and resolution
-- Integrate Zendesk/Freshdesk ticketing
-- Add unit and integration tests
-```
-
-### Acceptance Criteria
-- [ ] All quality gates pass first
-- [ ] Commit includes all new/modified files
-- [ ] No secrets or .env files committed
-
----
-
-## TASK-008: Implement URL Crawler Processor
-**Priority:** P2 | **Estimate:** Large | **Status:** Open (Phase 3)
-
-### Description
-Add ability to crawl web pages and ingest content into knowledge base.
-
-### Files to Create
-- `src/modules/knowledge/processors/url.processor.ts`
+### Flow
+1. Validate URL format and options
+2. Create KnowledgeSource with `type: 'URL'`, `sourceUrl` field, `status: 'PENDING'`
+3. Queue `CRAWL_URL` job to `crawlQueue`
+4. Return source ID immediately
 
 ### Reference
-- Follow `DocumentProcessor` interface in `processors/processor.interface.ts`
-- Look at existing processors (pdf, docx) for patterns
-
-### Requirements
-1. Accept URL input
-2. Fetch page content (handle redirects, timeouts)
-3. Extract text content (strip HTML, keep structure)
-4. Handle common formats (article pages, documentation sites)
-5. Respect robots.txt
-6. Extract metadata (title, description, author)
-
-### Dependencies to Add
-- `cheerio` or `jsdom` for HTML parsing
-- `robots-parser` for robots.txt
-
-### Edge Cases
-- Invalid URLs
-- Timeout handling
-- Rate limiting
-- JavaScript-rendered pages (note: may need Puppeteer for SPA)
-- Maximum page size limits
+- Follow pattern in `knowledge.controller.ts` `uploadDocument()` handler
+- Use existing `KnowledgeSourceType.URL` enum value
+- Schema already has `sourceUrl` field
 
 ### Acceptance Criteria
-- [ ] Implements `DocumentProcessor` interface
-- [ ] Extracts clean text from HTML
-- [ ] Handles errors gracefully
-- [ ] Unit tests created
-- [ ] Respects robots.txt
+- [ ] Endpoint accepts URL and optional crawl options
+- [ ] Validates URL format (http/https only)
+- [ ] Creates KnowledgeSource with status PENDING
+- [ ] Queues job for async processing
+- [ ] Returns `{ success: true, data: { sourceId, status, message } }`
+- [ ] Rejects invalid URLs with 400 error
+
+---
+
+## TASK-008B: Implement Sitemap Parser
+**Priority:** P0 | **Estimate:** Medium | **Status:** Open
+
+### Description
+Create sitemap parser to discover URLs from sitemap.xml files.
+
+### Files to Create
+- `src/modules/knowledge/crawlers/sitemap.parser.ts`
+- `src/modules/knowledge/crawlers/crawl.types.ts`
+
+### Interface
+```typescript
+// crawl.types.ts
+export interface SitemapUrl {
+  loc: string;
+  lastmod?: Date;
+  changefreq?: 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
+  priority?: number;
+}
+
+export interface SitemapParserOptions {
+  timeout?: number;
+  maxUrls?: number;
+  userAgent?: string;
+}
+
+// sitemap.parser.ts
+export interface SitemapParser {
+  parse(sitemapUrl: string, options?: SitemapParserOptions): Promise<SitemapUrl[]>;
+  findSitemap(baseUrl: string): Promise<string | null>;
+}
+```
+
+### Features
+1. **Standard Sitemap Parsing**
+   - Parse `sitemap.xml` format
+   - Extract `<url>` elements with `<loc>`, `<lastmod>`, `<changefreq>`, `<priority>`
+
+2. **Sitemap Index Support**
+   - Detect `<sitemapindex>` root element
+   - Recursively fetch nested sitemaps from `<sitemap><loc>` elements
+
+3. **Gzip Support**
+   - Handle `.xml.gz` compressed sitemaps
+   - Decompress before parsing
+
+4. **Discovery**
+   - Check common locations: `/sitemap.xml`, `/sitemap_index.xml`, `/sitemap/sitemap.xml`
+   - Parse `robots.txt` for `Sitemap:` directives
+
+### Dependencies
+- Use `cheerio` for XML parsing (already in project)
+- Use native `zlib` for gzip decompression
+
+### Error Handling
+- Timeout after 30 seconds
+- Return empty array if sitemap not found (not an error)
+- Log warnings for malformed entries, continue parsing
+
+### Acceptance Criteria
+- [ ] Parses standard sitemap.xml format
+- [ ] Handles sitemap index files (nested sitemaps)
+- [ ] Supports gzipped sitemaps (.xml.gz)
+- [ ] Discovers sitemap from robots.txt
+- [ ] Returns structured URL list with metadata
+- [ ] Unit tests: `tests/unit/knowledge/sitemap.parser.test.ts`
+
+---
+
+## TASK-008C: Implement Crawl Manager
+**Priority:** P0 | **Estimate:** Large | **Status:** Open
+
+### Description
+Create crawl state manager to orchestrate multi-page crawls with depth limiting and rate control.
+
+### Files to Create
+- `src/modules/knowledge/crawlers/crawl.manager.ts`
+
+### Interface
+```typescript
+export interface CrawlOptions {
+  maxDepth: number;           // 0 = single page, 1 = page + links, etc.
+  maxPages: number;           // Total pages to crawl
+  includePatterns?: string[]; // Regex patterns to include
+  excludePatterns?: string[]; // Regex patterns to exclude
+  respectRobots: boolean;     // Default true
+  delayMs: number;            // Delay between requests (default 1000)
+}
+
+export interface CrawlState {
+  sourceId: string;
+  tenantId: string;
+  rootUrl: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  options: CrawlOptions;
+  visited: Set<string>;       // URLs already crawled
+  pending: Map<string, number>; // URL -> depth
+  failed: Map<string, string>;  // URL -> error message
+  pagesDiscovered: number;
+  pagesCrawled: number;
+  pagesErrored: number;
+  startedAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrawlManager {
+  initCrawl(sourceId: string, tenantId: string, rootUrl: string, options: CrawlOptions): Promise<void>;
+  getState(sourceId: string): Promise<CrawlState | null>;
+  addUrl(sourceId: string, url: string, depth: number): Promise<boolean>;
+  markVisited(sourceId: string, url: string): Promise<void>;
+  markFailed(sourceId: string, url: string, error: string): Promise<void>;
+  getNextUrl(sourceId: string): Promise<{ url: string; depth: number } | null>;
+  isComplete(sourceId: string): Promise<boolean>;
+  cancelCrawl(sourceId: string): Promise<void>;
+  cleanupCrawl(sourceId: string): Promise<void>;
+}
+```
+
+### State Storage
+Store crawl state in Redis with keys:
+- `crawl:{sourceId}:state` - JSON of CrawlState (excluding Sets/Maps)
+- `crawl:{sourceId}:visited` - Redis SET of visited URLs
+- `crawl:{sourceId}:pending` - Redis ZSET (URL -> depth as score)
+- `crawl:{sourceId}:failed` - Redis HASH (URL -> error)
+
+TTL: 24 hours after last update
+
+### URL Filtering
+```typescript
+shouldCrawl(url: string, baseUrl: string, options: CrawlOptions): boolean {
+  // 1. Must be same domain as baseUrl
+  // 2. Must match includePatterns (if specified)
+  // 3. Must NOT match excludePatterns
+  // 4. Must not be in visited set
+  // 5. Must not exceed maxPages limit
+}
+```
+
+### Reference
+- Use `src/lib/redis.ts` for Redis client
+- Pattern: similar to rate limiter in `src/jobs/rate-limiter.ts`
+
+### Acceptance Criteria
+- [ ] Initializes crawl state in Redis
+- [ ] Tracks visited URLs (no duplicates)
+- [ ] Respects depth and page limits
+- [ ] Filters URLs by include/exclude patterns
+- [ ] Provides next URL for processing
+- [ ] Detects crawl completion
+- [ ] Supports cancellation
+- [ ] Cleans up state after completion
+- [ ] Unit tests with Redis mock
+
+---
+
+## TASK-008D: Create Crawl Worker
+**Priority:** P0 | **Estimate:** Medium | **Status:** Open
+**Blocked By:** TASK-008A, TASK-008B, TASK-008C
+
+### Description
+Create BullMQ worker to process crawl jobs.
+
+### Files to Create/Modify
+- `src/jobs/workers/crawl.worker.ts` - New worker
+- `src/jobs/queue.ts` - Add `crawlQueue`
+- `src/jobs/jobs.types.ts` - Add crawl job types
+
+### Job Types
+```typescript
+// jobs.types.ts
+export interface CrawlUrlJob {
+  type: 'CRAWL_URL';
+  sourceId: string;
+  tenantId: string;
+  url: string;
+  options: CrawlOptions;
+}
+
+export interface CrawlPageJob {
+  type: 'CRAWL_PAGE';
+  sourceId: string;
+  tenantId: string;
+  url: string;
+  depth: number;
+}
+```
+
+### Queue Setup
+```typescript
+// queue.ts
+export const crawlQueue = new Queue('crawl-processing', { connection });
+```
+
+### Worker Flow
+
+**CRAWL_URL Job (Initial):**
+1. Initialize crawl state via CrawlManager
+2. Update source status to `EXTRACTING`
+3. If `options.crawlSitemap`:
+   - Fetch sitemap using SitemapParser
+   - Add all sitemap URLs to pending (depth 0)
+4. Else:
+   - Add root URL to pending (depth 0)
+5. Queue first batch of `CRAWL_PAGE` jobs
+
+**CRAWL_PAGE Job (Per Page):**
+1. Check if crawl cancelled → skip
+2. Check rate limit (1 req/sec per domain)
+3. Fetch and extract using existing `urlProcessor`
+4. Store extracted content (aggregate for later)
+5. If depth < maxDepth:
+   - Extract links from page
+   - Filter and add new URLs via CrawlManager
+   - Queue new `CRAWL_PAGE` jobs
+6. Mark URL as visited
+7. Check if crawl complete:
+   - If yes: aggregate all content, queue embedding job
+   - Update source status to `CHUNKING`
+
+### Rate Limiting
+- Use existing `checkRateLimit()` pattern from document worker
+- Key: `crawl:ratelimit:{domain}`
+- Limit: 1 request per second per domain
+
+### Error Handling
+- Page errors don't stop crawl
+- Mark failed URLs in crawl state
+- Max 3 retries per page
+- 4xx errors: non-retryable (skip)
+- 5xx/timeout: retryable
+
+### Reference
+- Pattern: `src/jobs/workers/document.worker.ts`
+- Use `urlProcessor` from `src/modules/knowledge/processors/url.processor.ts`
+
+### Acceptance Criteria
+- [ ] Queue and worker created
+- [ ] Processes CRAWL_URL jobs (sitemap or single URL)
+- [ ] Processes CRAWL_PAGE jobs with depth tracking
+- [ ] Respects rate limits per domain
+- [ ] Discovers and queues new URLs
+- [ ] Handles errors gracefully (continues crawl)
+- [ ] Triggers chunking/embedding after completion
+- [ ] Updates source status throughout
+
+---
+
+## TASK-008E: Enhance URL Processor
+**Priority:** P1 | **Estimate:** Small | **Status:** Open
+
+### Description
+Add link extraction capability to existing URL processor for crawler.
+
+### Files to Modify
+- `src/modules/knowledge/processors/url.processor.ts`
+
+### New Method
+```typescript
+/**
+ * Extract internal links from HTML page
+ */
+extractLinks(html: string, baseUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const baseUrlObj = new URL(baseUrl);
+  const links = new Set<string>();
+
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+
+    try {
+      // Resolve relative URLs
+      const absoluteUrl = new URL(href, baseUrl);
+
+      // Filter criteria:
+      // 1. Same hostname
+      if (absoluteUrl.hostname !== baseUrlObj.hostname) return;
+
+      // 2. HTTP(S) only
+      if (!['http:', 'https:'].includes(absoluteUrl.protocol)) return;
+
+      // 3. Remove fragment
+      absoluteUrl.hash = '';
+
+      // 4. Normalize (lowercase hostname, remove trailing slash)
+      const normalized = absoluteUrl.href.replace(/\/$/, '');
+
+      links.add(normalized);
+    } catch {
+      // Invalid URL, skip
+    }
+  });
+
+  return Array.from(links);
+}
+```
+
+### Additional Enhancements
+1. **Canonical URL Detection**
+   ```typescript
+   getCanonicalUrl(html: string, pageUrl: string): string {
+     const $ = cheerio.load(html);
+     const canonical = $('link[rel="canonical"]').attr('href');
+     return canonical ? new URL(canonical, pageUrl).href : pageUrl;
+   }
+   ```
+
+2. **Better Content Detection**
+   - Add support for `<section>`, `<div class="content">`, `<div id="content">`
+   - Detect and skip navigation, footer, sidebar
+
+3. **Metadata Enhancement**
+   - Extract JSON-LD structured data
+   - Extract OpenGraph tags more comprehensively
+
+### Acceptance Criteria
+- [ ] `extractLinks()` method added
+- [ ] Returns only internal links (same domain)
+- [ ] Handles relative URLs correctly
+- [ ] Removes duplicates and fragments
+- [ ] Canonical URL detection added
+- [ ] Unit tests for link extraction
+
+---
+
+## TASK-008F: Add Crawl Status API
+**Priority:** P1 | **Estimate:** Small | **Status:** Open
+**Blocked By:** TASK-008D
+
+### Description
+Add endpoints to check crawl progress and cancel running crawls.
+
+### Files to Modify
+- `src/modules/knowledge/knowledge.routes.ts`
+- `src/modules/knowledge/knowledge.controller.ts`
+- `src/modules/knowledge/knowledge.service.ts`
+
+### Endpoints
+
+**GET /v1/knowledge/sources/:id/crawl-status**
+```typescript
+// Response
+{
+  "success": true,
+  "data": {
+    "sourceId": "uuid",
+    "status": "running",
+    "rootUrl": "https://example.com",
+    "pagesDiscovered": 45,
+    "pagesCrawled": 12,
+    "pagesErrored": 2,
+    "currentDepth": 1,
+    "options": {
+      "maxDepth": 2,
+      "maxPages": 50
+    },
+    "startedAt": "2026-01-04T10:00:00Z",
+    "updatedAt": "2026-01-04T10:05:00Z"
+  }
+}
+```
+
+**POST /v1/knowledge/sources/:id/cancel-crawl**
+```typescript
+// Response
+{
+  "success": true,
+  "data": {
+    "sourceId": "uuid",
+    "status": "cancelled",
+    "pagesCrawled": 12,
+    "message": "Crawl cancelled. 12 pages were processed."
+  }
+}
+```
+
+### Implementation
+- Use CrawlManager to get/update state
+- Cancel clears pending queue and marks state cancelled
+- Return 404 if source not found or not a URL type
+- Return 400 if crawl not running (for cancel)
+
+### Acceptance Criteria
+- [ ] Status endpoint returns real-time crawl progress
+- [ ] Cancel endpoint stops running crawl
+- [ ] Proper error handling (404, 400)
+- [ ] Works with tenant isolation
+
+---
+
+## TASK-008G: Crawl Integration Tests
+**Priority:** P1 | **Estimate:** Medium | **Status:** Open
+**Blocked By:** TASK-008A through TASK-008F
+
+### Description
+Create comprehensive tests for URL crawling functionality.
+
+### Files to Create
+- `tests/unit/knowledge/sitemap.parser.test.ts`
+- `tests/unit/knowledge/crawl.manager.test.ts`
+- `tests/unit/knowledge/url.processor.links.test.ts`
+- `tests/integration/knowledge/url-crawl.test.ts`
+
+### Unit Tests
+
+**sitemap.parser.test.ts:**
+- Parse standard sitemap.xml
+- Parse sitemap index with nested sitemaps
+- Handle gzipped sitemap
+- Find sitemap from robots.txt
+- Handle missing sitemap gracefully
+- Handle malformed XML
+
+**crawl.manager.test.ts:**
+- Initialize crawl state
+- Add and retrieve URLs
+- Mark visited/failed
+- Respect depth limits
+- Respect page limits
+- URL filtering (include/exclude patterns)
+- Detect completion
+- Handle cancellation
+
+**url.processor.links.test.ts:**
+- Extract internal links
+- Ignore external links
+- Handle relative URLs
+- Remove fragments
+- Deduplicate URLs
+- Handle malformed hrefs
+
+### Integration Tests
+
+**url-crawl.test.ts:**
+```typescript
+describe('URL Crawl Integration', () => {
+  // Setup: Create tenant, mock HTTP responses
+
+  it('should crawl single URL', async () => {
+    // POST /v1/knowledge/url with maxDepth: 0
+    // Wait for processing
+    // Verify source indexed with content
+  });
+
+  it('should crawl with sitemap', async () => {
+    // Mock sitemap.xml response
+    // POST /v1/knowledge/url with crawlSitemap: true
+    // Verify all sitemap URLs processed
+  });
+
+  it('should respect depth limit', async () => {
+    // Mock pages with links
+    // POST /v1/knowledge/url with maxDepth: 1
+    // Verify only 2 levels crawled
+  });
+
+  it('should respect page limit', async () => {
+    // POST /v1/knowledge/url with maxPages: 5
+    // Verify max 5 pages crawled
+  });
+
+  it('should filter URLs by pattern', async () => {
+    // POST with includePatterns/excludePatterns
+    // Verify filtering works
+  });
+
+  it('should report crawl status', async () => {
+    // Start crawl
+    // GET crawl-status
+    // Verify progress reported
+  });
+
+  it('should cancel running crawl', async () => {
+    // Start crawl
+    // POST cancel-crawl
+    // Verify stopped
+  });
+
+  it('should handle page errors gracefully', async () => {
+    // Mock some 404 responses
+    // Verify crawl continues, errors tracked
+  });
+});
+```
+
+### Mocking
+- Mock HTTP responses with `nock` or similar
+- Mock Redis for unit tests
+- Use real Redis for integration tests (via docker)
+
+### Acceptance Criteria
+- [ ] All unit tests pass
+- [ ] All integration tests pass
+- [ ] Tests cover happy paths and error cases
+- [ ] Mocking correctly isolates external dependencies
+- [ ] Tests run in CI pipeline
 
 ---
 
@@ -298,9 +573,6 @@ Add ability to sync knowledge from Notion workspaces.
 5. Track sync state for incremental updates
 6. Store connection credentials securely (encrypted)
 
-### Database Changes
-May need to add `NotionConnection` model or use existing `KnowledgeSource` with type=NOTION
-
 ### API Endpoints
 - `POST /v1/knowledge/connect/notion` - Start OAuth flow
 - `GET /v1/knowledge/connect/notion/callback` - OAuth callback
@@ -321,7 +593,7 @@ May need to add `NotionConnection` model or use existing `KnowledgeSource` with 
 Add cron-based scheduling for external source synchronization.
 
 ### Files to Create/Modify
-- `src/jobs/workers/sync.worker.ts` (exists but may need enhancement)
+- `src/jobs/workers/sync.worker.ts` (enhance)
 - `src/jobs/scheduler.ts` (new)
 
 ### Requirements
@@ -332,8 +604,8 @@ Add cron-based scheduling for external source synchronization.
 5. Track last sync time and status
 
 ### Database Changes
-Add to KnowledgeSource:
 ```prisma
+// Add to KnowledgeSource model
 syncSchedule    String?    // cron expression
 lastSyncStatus  String?    // success, failed, in_progress
 nextSyncAt      DateTime?
@@ -350,17 +622,23 @@ nextSyncAt      DateTime?
 ## Task Dependencies
 
 ```
-TASK-001 (lint fix)
-    ↓
-TASK-002 (escalation service tests) ──┐
-TASK-003 (escalation controller tests)├→ TASK-006 (quality gates) → TASK-007 (commit)
-TASK-004 (conversation integration)   │
-TASK-005 (escalation integration) ────┘
+TASK-008A (endpoint) ──────┐
+TASK-008B (sitemap) ───────┼─→ TASK-008D (worker) ──→ TASK-008F (status API)
+TASK-008C (crawl manager) ─┘           │                      │
+                                       ↓                      ↓
+TASK-008E (enhance processor) ←────────┴──────────→ TASK-008G (tests)
 
-TASK-008 (URL crawler) ─────┐
-TASK-009 (Notion connector) ├→ Phase 3 Complete
-TASK-010 (Sync scheduling) ─┘
+TASK-009 (Notion) ─────┐
+                       ├─→ Phase 3 Complete
+TASK-010 (Scheduling) ─┘
 ```
+
+**Parallel Work:**
+- TASK-008A, 008B, 008C can start simultaneously
+- TASK-008E can be done anytime
+- TASK-008D requires 008A, 008B, 008C
+- TASK-008F requires 008D
+- TASK-008G requires all 008 tasks
 
 ---
 

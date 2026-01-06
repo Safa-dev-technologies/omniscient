@@ -259,6 +259,7 @@ model KnowledgeSource {
   storagePath      String?
 
   sourceUrl        String?
+  credentials      Json?               // Encrypted credentials for connector sources (NOTION, ZENDESK, etc.)
 
   status           IndexStatus         @default(PENDING)
   statusMessage    String?
@@ -275,6 +276,11 @@ model KnowledgeSource {
   processedAt      DateTime?
   indexedAt        DateTime?
   lastSyncedAt     DateTime?
+
+  // Sync scheduling fields
+  syncSchedule     String?             // Cron expression (e.g., "0 2 * * *" for daily at 2 AM)
+  lastSyncStatus   String?             // "success", "failed", "in_progress"
+  nextSyncAt       DateTime?            // When the next sync should run
 
   chunks           KnowledgeChunk[]
 

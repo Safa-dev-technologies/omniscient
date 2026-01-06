@@ -5,9 +5,13 @@ vi.mock('../../../src/lib/prisma.js', () => {
   const mockPrisma = {
     conversation: {
       create: vi.fn(),
+      findFirst: vi.fn(),
     },
     message: {
       findMany: vi.fn(),
+    },
+    user: {
+      findFirst: vi.fn(),
     },
   };
   return { prisma: mockPrisma };
@@ -16,6 +20,9 @@ vi.mock('../../../src/lib/prisma.js', () => {
 vi.mock('../../../src/config/index.js', () => ({
   CONSTANTS: {
     MAX_CONVERSATION_HISTORY: 50,
+  },
+  env: {
+    NODE_ENV: 'test',
   },
 }));
 
@@ -36,10 +43,15 @@ describe('Conversation Service', () => {
         status: 'BOT_ACTIVE',
         metadata: { source: 'homepage' },
       };
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({
+        id: 'user-1',
+        tenantId: 'tenant-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+      } as any);
       vi.mocked(prisma.conversation.create).mockResolvedValue(mockConversation as any);
 
-      const result = await conversationService.createConversation({
-        tenantId: 'tenant-1',
+      const result = await conversationService.createConversation('tenant-1', {
         userId: 'user-1',
         channel: 'WEB',
         metadata: { source: 'homepage' },
@@ -53,11 +65,18 @@ describe('Conversation Service', () => {
           status: 'BOT_ACTIVE',
           metadata: { source: 'homepage' },
         },
+        include: expect.any(Object),
       });
       expect(result).toEqual(mockConversation);
     });
 
     it('should create conversation without metadata', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({
+        id: 'user-1',
+        tenantId: 'tenant-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+      } as any);
       vi.mocked(prisma.conversation.create).mockResolvedValue({
         id: 'conv-1',
         tenantId: 'tenant-1',
@@ -66,8 +85,7 @@ describe('Conversation Service', () => {
         status: 'BOT_ACTIVE',
       } as any);
 
-      await conversationService.createConversation({
-        tenantId: 'tenant-1',
+      await conversationService.createConversation('tenant-1', {
         userId: 'user-1',
         channel: 'WEB',
       });
@@ -76,14 +94,20 @@ describe('Conversation Service', () => {
         data: expect.objectContaining({
           metadata: undefined,
         }),
+        include: expect.any(Object),
       });
     });
 
     it('should set status to BOT_ACTIVE by default', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({
+        id: 'user-1',
+        tenantId: 'tenant-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+      } as any);
       vi.mocked(prisma.conversation.create).mockResolvedValue({ status: 'BOT_ACTIVE' } as any);
 
-      await conversationService.createConversation({
-        tenantId: 'tenant-1',
+      await conversationService.createConversation('tenant-1', {
         userId: 'user-1',
         channel: 'WEB',
       });
@@ -92,21 +116,28 @@ describe('Conversation Service', () => {
         data: expect.objectContaining({
           status: 'BOT_ACTIVE',
         }),
+        include: expect.any(Object),
       });
     });
 
     it('should handle different channel types', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({
+        id: 'user-1',
+        tenantId: 'tenant-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+      } as any);
       vi.mocked(prisma.conversation.create).mockResolvedValue({} as any);
 
       for (const channel of ['WEB', 'WHATSAPP', 'SLACK', 'EMAIL']) {
-        await conversationService.createConversation({
-          tenantId: 'tenant-1',
+        await conversationService.createConversation('tenant-1', {
           userId: 'user-1',
           channel: channel as any,
         });
 
         expect(prisma.conversation.create).toHaveBeenLastCalledWith({
           data: expect.objectContaining({ channel }),
+          include: expect.any(Object),
         });
       }
     });
@@ -119,9 +150,10 @@ describe('Conversation Service', () => {
         { id: '2', content: 'Second', createdAt: new Date('2024-01-02') },
         { id: '1', content: 'First', createdAt: new Date('2024-01-01') },
       ];
+      vi.mocked(prisma.conversation.findFirst).mockResolvedValue({ id: 'conv-1' } as any);
       vi.mocked(prisma.message.findMany).mockResolvedValue(messages as any);
 
-      const result = await conversationService.getConversationHistory('conv-1');
+      const result = await conversationService.getConversationHistory('tenant-1', 'conv-1');
 
       // Should be reversed to chronological order
       expect(result[0].id).toBe('1');
@@ -130,9 +162,10 @@ describe('Conversation Service', () => {
     });
 
     it('should respect limit parameter', async () => {
+      vi.mocked(prisma.conversation.findFirst).mockResolvedValue({ id: 'conv-1' } as any);
       vi.mocked(prisma.message.findMany).mockResolvedValue([]);
 
-      await conversationService.getConversationHistory('conv-1', 10);
+      await conversationService.getConversationHistory('tenant-1', 'conv-1', 10);
 
       expect(prisma.message.findMany).toHaveBeenCalledWith({
         where: { conversationId: 'conv-1' },
@@ -142,9 +175,10 @@ describe('Conversation Service', () => {
     });
 
     it('should use default limit when not specified', async () => {
+      vi.mocked(prisma.conversation.findFirst).mockResolvedValue({ id: 'conv-1' } as any);
       vi.mocked(prisma.message.findMany).mockResolvedValue([]);
 
-      await conversationService.getConversationHistory('conv-1');
+      await conversationService.getConversationHistory('tenant-1', 'conv-1');
 
       expect(prisma.message.findMany).toHaveBeenCalledWith({
         where: { conversationId: 'conv-1' },
@@ -154,9 +188,10 @@ describe('Conversation Service', () => {
     });
 
     it('should return empty array for conversation with no messages', async () => {
+      vi.mocked(prisma.conversation.findFirst).mockResolvedValue({ id: 'conv-1' } as any);
       vi.mocked(prisma.message.findMany).mockResolvedValue([]);
 
-      const result = await conversationService.getConversationHistory('conv-1');
+      const result = await conversationService.getConversationHistory('tenant-1', 'conv-1');
 
       expect(result).toEqual([]);
     });
