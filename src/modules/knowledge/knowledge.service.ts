@@ -5,7 +5,7 @@ import { storage } from '../../lib/storage/index.js';
 import { generateEmbedding } from '../../lib/llm/index.js';
 import { queryVectors, getPineconeIndex } from '../../lib/pinecone.js';
 import { documentQueue, crawlQueue, syncQueue } from '../../jobs/queue.js';
-import { parseExpression } from 'cron-parser';
+import cronParser from 'cron-parser';
 import { env } from '../../config/index.js';
 import { getProcessor } from './processors/index.js';
 import { logger } from '../../lib/logger.js';
@@ -20,6 +20,7 @@ import { crawlManager } from './crawlers/crawl.manager.js';
 import { NotionConnector } from './connectors/index.js';
 import { encryptJson, decryptJson } from '../../utils/crypto.js';
 import type { ConnectorCredentials } from './connectors/connector.interface.js';
+import { validateUrlForSSRF } from '../../utils/url-validator.js';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'application/pdf': 'PDF',
@@ -121,13 +122,49 @@ export async function listSources(tenantId: string, params: ListSourcesInput) {
   return { sources, total, limit, offset };
 }
 
+// Credential age threshold for rotation warning (90 days in milliseconds)
+const CREDENTIAL_AGE_WARNING_MS = 90 * 24 * 60 * 60 * 1000;
+
 export async function getSource(tenantId: string, sourceId: string) {
-  return prisma.knowledgeSource.findFirst({
+  const source = await prisma.knowledgeSource.findFirst({
     where: { id: sourceId, tenantId },
     include: {
       _count: { select: { chunks: true } },
     },
   });
+
+  if (!source) {
+    return null;
+  }
+
+  // Check credential age for connector sources
+  const connectorTypes: KnowledgeSourceType[] = ['NOTION', 'ZENDESK'];
+  let credentialWarning: string | undefined;
+
+  if (connectorTypes.includes(source.type) && source.credentials) {
+    try {
+      const credentialsStr =
+        typeof source.credentials === 'string'
+          ? source.credentials
+          : JSON.stringify(source.credentials);
+      const credentials = decryptJson<{ createdAt?: string }>(credentialsStr);
+
+      if (credentials.createdAt) {
+        const credentialAge = Date.now() - new Date(credentials.createdAt).getTime();
+        if (credentialAge > CREDENTIAL_AGE_WARNING_MS) {
+          const daysOld = Math.floor(credentialAge / (24 * 60 * 60 * 1000));
+          credentialWarning = `Credentials are ${daysOld} days old. Consider rotating for security.`;
+        }
+      }
+    } catch {
+      // Ignore decryption errors for this check
+    }
+  }
+
+  return {
+    ...source,
+    credentialWarning,
+  };
 }
 
 export async function deleteSource(tenantId: string, sourceId: string) {
@@ -210,8 +247,51 @@ export async function reindexSource(tenantId: string, sourceId: string) {
   return { sourceId, status: 'PENDING', message: 'Reindex queued' };
 }
 
+/**
+ * Extract a snippet around matching terms
+ */
+function extractSnippet(text: string, query: string, maxLength: number): string {
+  if (!text || text.length <= maxLength) {
+    return text || '';
+  }
+
+  // Find first occurrence of any query term
+  const queryTerms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 2);
+  const textLower = text.toLowerCase();
+
+  let bestIndex = 0;
+  for (const term of queryTerms) {
+    const idx = textLower.indexOf(term);
+    if (idx !== -1) {
+      bestIndex = idx;
+      break;
+    }
+  }
+
+  // Extract snippet centered around the match
+  const halfLength = Math.floor(maxLength / 2);
+  let start = Math.max(0, bestIndex - halfLength);
+  const end = Math.min(text.length, start + maxLength);
+
+  // Adjust start if we hit the end
+  if (end === text.length) {
+    start = Math.max(0, end - maxLength);
+  }
+
+  let snippet = text.slice(start, end);
+
+  // Add ellipsis if truncated
+  if (start > 0) snippet = '...' + snippet;
+  if (end < text.length) snippet = snippet + '...';
+
+  return snippet;
+}
+
 export async function searchKnowledge(tenantId: string, params: SearchInput) {
-  const { q, limit, threshold } = params;
+  const { q, limit, threshold, textMode = 'snippet', snippetLength = 200 } = params;
 
   // Generate embedding for query
   const queryEmbedding = await generateEmbedding(q);
@@ -220,15 +300,34 @@ export async function searchKnowledge(tenantId: string, params: SearchInput) {
   const namespace = `tenant_${tenantId}`;
   const matches = await queryVectors(namespace, queryEmbedding, limit, threshold);
 
-  // Format results
-  return matches.map((match) => ({
-    score: match.score,
-    text: match.metadata?.text as string | undefined,
-    sourceName: match.metadata?.sourceName as string | undefined,
-    sourceId: match.metadata?.sourceId as string | undefined,
-    chunkIndex: match.metadata?.chunkIndex as number | undefined,
-    pageNumber: match.metadata?.pageNumber as number | undefined,
-  }));
+  // Format results with text mode handling
+  return matches.map((match) => {
+    const fullText = match.metadata?.text as string | undefined;
+
+    // Determine text to return based on textMode
+    let text: string | undefined;
+    switch (textMode) {
+      case 'full':
+        text = fullText;
+        break;
+      case 'snippet':
+        text = fullText ? extractSnippet(fullText, q, snippetLength) : undefined;
+        break;
+      case 'none':
+        text = undefined;
+        break;
+    }
+
+    return {
+      id: match.id, // Pinecone vector ID
+      score: match.score,
+      text,
+      sourceName: match.metadata?.sourceName as string | undefined,
+      sourceId: match.metadata?.sourceId as string | undefined,
+      chunkIndex: match.metadata?.chunkIndex as number | undefined,
+      pageNumber: match.metadata?.pageNumber as number | undefined,
+    };
+  });
 }
 
 /**
@@ -241,7 +340,7 @@ export async function createUrlSource(tenantId: string, input: CrawlUrlInput) {
   let urlObj: URL;
   try {
     urlObj = new URL(url);
-  } catch (error) {
+  } catch {
     throw new Error(`Invalid URL format: ${url}`);
   }
 
@@ -249,6 +348,12 @@ export async function createUrlSource(tenantId: string, input: CrawlUrlInput) {
     throw new Error(
       `Unsupported URL scheme: ${urlObj.protocol}. Only http and https are supported.`
     );
+  }
+
+  // SSRF Protection: Validate URL doesn't point to private/internal IPs
+  const ssrfCheck = await validateUrlForSSRF(url);
+  if (!ssrfCheck.valid) {
+    throw new Error(`URL not allowed: ${ssrfCheck.error}`);
   }
 
   // Default options
@@ -318,6 +423,7 @@ export async function getCrawlStatus(tenantId: string, sourceId: string) {
     return {
       sourceId,
       status: 'not_started',
+      rootUrl: source.sourceUrl,
       message: 'Crawl has not started or has been completed and cleaned up',
     };
   }
@@ -416,8 +522,14 @@ export async function connectNotion(tenantId: string, input: ConnectNotionInput)
     throw new Error('Failed to connect to Notion: Invalid API key or insufficient permissions');
   }
 
+  // Add credential timestamp for rotation tracking
+  const credentialsWithTimestamp = {
+    ...credentials,
+    createdAt: new Date().toISOString(),
+  };
+
   // Encrypt credentials
-  const encryptedCredentials = encryptJson(credentials);
+  const encryptedCredentials = encryptJson(credentialsWithTimestamp);
 
   // Create source record
   const source = await prisma.knowledgeSource.create({
@@ -488,6 +600,14 @@ export async function syncSource(tenantId: string, sourceId: string) {
   // Verify source exists and belongs to tenant
   const source = await prisma.knowledgeSource.findFirst({
     where: { id: sourceId, tenantId },
+    select: {
+      id: true,
+      type: true,
+      tenantId: true,
+      credentials: true,
+      lastSyncedAt: true,
+      syncSchedule: true,
+    },
   });
 
   if (!source) {
@@ -558,7 +678,7 @@ export async function syncSource(tenantId: string, sourceId: string) {
  */
 function calculateNextSync(cronExpression: string): Date {
   try {
-    const interval = parseExpression(cronExpression);
+    const interval = cronParser.parseExpression(cronExpression);
     return interval.next().toDate();
   } catch (error) {
     logger.error({ error, cronExpression }, 'Invalid cron expression, using default');

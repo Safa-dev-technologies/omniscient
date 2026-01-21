@@ -6,6 +6,7 @@ import { TEST_CONFIG, testSetup } from '../setup.js';
 describe('Escalation API Integration', () => {
   let server: Awaited<ReturnType<typeof buildServer>>;
   let testApiKey: string;
+  let testApiKeyId: string;
   let testUserId: string;
   let testConversationId: string;
   let testEscalationId: string;
@@ -17,36 +18,39 @@ describe('Escalation API Integration', () => {
     server = await buildServer();
     await server.ready();
 
-    // Create test user
+    // Create test user with unique email to avoid conflicts with parallel tests
+    // Don't specify ID - let Prisma auto-generate UUID
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const user = await prisma.user.create({
       data: {
-        id: `test-user-${Date.now()}`,
         tenantId: TEST_CONFIG.tenantId,
         displayName: 'Test User',
-        email: 'test@example.com',
+        email: `escalation-test-${uniqueSuffix}@example.com`,
       },
     });
     testUserId = user.id;
 
-    // Create API key for test tenant
+    // Create API key for test tenant with unique key to avoid conflicts
     const { hashApiKey } = await import('../../../src/utils/hash.js');
-    testApiKey = 'omni_test_integration_key_12345';
+    const uniqueKeySuffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    testApiKey = `omni_escalation_test_${uniqueKeySuffix}`;
     const keyHash = hashApiKey(testApiKey);
     const keyPrefix = testApiKey.substring(0, 16);
 
-    await prisma.apiKey.create({
+    const apiKeyRecord = await prisma.apiKey.create({
       data: {
         tenantId: TEST_CONFIG.tenantId,
         keyHash,
         keyPrefix,
-        name: 'Test API Key',
+        name: 'Escalation Test API Key',
         permissions: { admin: true },
       },
     });
+    testApiKeyId = apiKeyRecord.id;
   });
 
   afterAll(async () => {
-    // Cleanup
+    // Cleanup - only delete resources created by this test file
     await prisma.escalation.deleteMany({
       where: { conversation: { tenantId: TEST_CONFIG.tenantId } },
     });
@@ -56,12 +60,22 @@ describe('Escalation API Integration', () => {
     await prisma.conversation.deleteMany({
       where: { tenantId: TEST_CONFIG.tenantId },
     });
-    await prisma.apiKey.deleteMany({
-      where: { tenantId: TEST_CONFIG.tenantId },
-    });
-    await prisma.user.deleteMany({
-      where: { tenantId: TEST_CONFIG.tenantId },
-    });
+    // Only delete the specific API key created by this test, not all keys for the tenant
+    if (testApiKeyId) {
+      await prisma.apiKey
+        .delete({
+          where: { id: testApiKeyId },
+        })
+        .catch(() => {}); // Ignore if already deleted
+    }
+    // Only delete the specific user created by this test file
+    if (testUserId) {
+      await prisma.user
+        .delete({
+          where: { id: testUserId },
+        })
+        .catch(() => {}); // Ignore if already deleted
+    }
 
     await server.close();
   });
@@ -81,10 +95,9 @@ describe('Escalation API Integration', () => {
 
   describe('POST /v1/escalations', () => {
     beforeEach(async () => {
-      // Create a conversation for escalation
+      // Create a conversation for escalation - let Prisma auto-generate UUID
       const conversation = await prisma.conversation.create({
         data: {
-          id: `conv-${Date.now()}`,
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -130,7 +143,7 @@ describe('Escalation API Integration', () => {
           authorization: `Bearer ${testApiKey}`,
         },
         payload: {
-          conversationId: 'non-existent-conversation',
+          conversationId: '00000000-0000-4000-8000-000000000001',
           reason: 'USER_REQUEST',
         },
       });
@@ -174,7 +187,6 @@ describe('Escalation API Integration', () => {
       // Create test conversations and escalations
       const conv1 = await prisma.conversation.create({
         data: {
-          id: 'conv-list-1',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -184,7 +196,6 @@ describe('Escalation API Integration', () => {
 
       const conv2 = await prisma.conversation.create({
         data: {
-          id: 'conv-list-2',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -259,7 +270,6 @@ describe('Escalation API Integration', () => {
     beforeEach(async () => {
       const conversation = await prisma.conversation.create({
         data: {
-          id: 'conv-get',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -297,7 +307,7 @@ describe('Escalation API Integration', () => {
     it('should return 404 when escalation not found', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/v1/escalations/non-existent-id',
+        url: '/v1/escalations/00000000-0000-4000-8000-000000000003',
         headers: {
           authorization: `Bearer ${testApiKey}`,
         },
@@ -313,7 +323,6 @@ describe('Escalation API Integration', () => {
     beforeEach(async () => {
       const conversation = await prisma.conversation.create({
         data: {
-          id: 'conv-update',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -356,7 +365,6 @@ describe('Escalation API Integration', () => {
     beforeEach(async () => {
       const conversation = await prisma.conversation.create({
         data: {
-          id: 'conv-resolve',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -457,7 +465,6 @@ describe('Escalation API Integration', () => {
     beforeEach(async () => {
       const conversation = await prisma.conversation.create({
         data: {
-          id: 'conv-ticket',
           tenantId: TEST_CONFIG.tenantId,
           userId: testUserId,
           channel: 'WEB',
@@ -541,9 +548,10 @@ describe('Escalation API Integration', () => {
         update: {},
       });
 
-      // Create API key for other tenant
+      // Create API key for other tenant with unique key
       const { hashApiKey } = await import('../../../src/utils/hash.js');
-      otherApiKey = 'omni_other_tenant_key_12345';
+      const otherUniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      otherApiKey = `omni_other_escalation_${otherUniqueSuffix}`;
       const keyHash = hashApiKey(otherApiKey);
       const keyPrefix = otherApiKey.substring(0, 16);
 
@@ -558,18 +566,17 @@ describe('Escalation API Integration', () => {
       });
 
       // Create conversation and escalation for other tenant
+      // Don't specify ID - let Prisma auto-generate UUID
       const otherUser = await prisma.user.create({
         data: {
-          id: `other-user-${Date.now()}`,
           tenantId: otherTenantId,
           displayName: 'Other User',
-          email: 'other@example.com',
+          email: `other-escalation-${otherUniqueSuffix}@example.com`,
         },
       });
 
       const conversation = await prisma.conversation.create({
         data: {
-          id: 'other-conv',
           tenantId: otherTenantId,
           userId: otherUser.id,
           channel: 'WEB',
