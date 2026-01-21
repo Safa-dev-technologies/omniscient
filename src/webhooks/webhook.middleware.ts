@@ -211,9 +211,9 @@ export async function webhookRateLimit(
 
     return { allowed: true };
   } catch (error) {
-    // If Redis fails, allow request (fail open for availability)
-    logger.warn({ error, channel, tenantId }, 'Rate limit check failed, allowing request');
-    return { allowed: true };
+    // Fail closed - block requests when Redis is unavailable to prevent abuse
+    logger.error({ error, channel, tenantId }, 'Rate limit check failed, blocking request');
+    return { allowed: false, retryAfter: 60 };
   }
 }
 

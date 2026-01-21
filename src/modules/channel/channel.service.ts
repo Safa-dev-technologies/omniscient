@@ -36,6 +36,46 @@ function maskCredentials(credentials: Record<string, unknown>): Record<string, u
 }
 
 /**
+ * Get allowed credential field names for a channel type
+ * Used to sanitize input and prevent injection of unexpected fields
+ */
+function getAllowedCredentialFields(channel: Channel): string[] {
+  switch (channel) {
+    case 'WHATSAPP':
+      return ['phoneNumberId', 'accessToken', 'webhookVerifyToken', 'businessAccountId'];
+    case 'TELEGRAM':
+      return ['botToken', 'webhookSecret'];
+    case 'WEB':
+      return ['allowedOrigins', 'rateLimit', 'sessionTimeout'];
+    case 'SLACK':
+    case 'EMAIL':
+    case 'SMS':
+      return [];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Sanitize credentials to only include allowed fields for the channel type
+ */
+function sanitizeCredentials(
+  channel: Channel,
+  credentials: Record<string, unknown>
+): Record<string, unknown> {
+  const allowedFields = getAllowedCredentialFields(channel);
+  const sanitized: Record<string, unknown> = {};
+
+  for (const field of allowedFields) {
+    if (field in credentials) {
+      sanitized[field] = credentials[field];
+    }
+  }
+
+  return sanitized;
+}
+
+/**
  * Validate credentials based on channel type
  */
 function validateCredentials(channel: Channel, credentials: Record<string, unknown>): void {
@@ -94,8 +134,9 @@ export async function createConfig(
     throw new Error('Tenant not found');
   }
 
-  // Validate credentials per channel type
-  validateCredentials(data.channel, data.credentials);
+  // Sanitize and validate credentials per channel type
+  const sanitizedCredentials = sanitizeCredentials(data.channel, data.credentials);
+  validateCredentials(data.channel, sanitizedCredentials);
 
   // Check if channel config already exists
   const existing = await prisma.channelConfig.findUnique({
@@ -112,7 +153,7 @@ export async function createConfig(
   }
 
   // Encrypt credentials
-  const encryptedCredentials = encrypt(JSON.stringify(data.credentials));
+  const encryptedCredentials = encrypt(JSON.stringify(sanitizedCredentials));
 
   // Generate webhook secret
   const webhookSecret = generateWebhookSecret();
@@ -244,11 +285,14 @@ export async function updateConfig(
   // If credentials are being updated, validate and encrypt them
   let encryptedCredentials: Prisma.InputJsonValue | undefined;
   if (data.credentials) {
+    // Sanitize input to only include allowed fields (prevent injection of unexpected fields)
+    const sanitizedInput = sanitizeCredentials(channel, data.credentials);
+
     // Merge with existing credentials (don't replace entirely)
     const existingCredentials = decryptJson<Record<string, unknown>>(
       existing.credentials as string
     );
-    const mergedCredentials = { ...existingCredentials, ...data.credentials };
+    const mergedCredentials = { ...existingCredentials, ...sanitizedInput };
     validateCredentials(channel, mergedCredentials);
     encryptedCredentials = encrypt(JSON.stringify(mergedCredentials)) as Prisma.InputJsonValue;
   }
@@ -338,7 +382,14 @@ export async function testConnection(
   tenantId: string,
   channel: Channel
 ): Promise<{ success: boolean; message: string }> {
-  const config = await getConfig(tenantId, channel);
+  const config = await prisma.channelConfig.findUnique({
+    where: {
+      tenantId_channel: {
+        tenantId,
+        channel,
+      },
+    },
+  });
 
   if (!config) {
     throw new Error(`Channel config not found for channel ${channel}`);
@@ -351,12 +402,73 @@ export async function testConnection(
     };
   }
 
-  // TODO: Implement actual connection testing when adapters are ready
-  // For now, just validate that config exists and is enabled
-  return {
-    success: true,
-    message: 'Channel configuration is valid (connection test not yet implemented)',
-  };
+  // Decrypt credentials
+  const encryptedCredentials = config.credentials as string;
+  const credentials = decryptJson<Record<string, unknown>>(encryptedCredentials);
+
+  // Test connection based on channel type
+  try {
+    switch (channel) {
+      case 'TELEGRAM': {
+        const botToken = credentials.botToken as string;
+        if (!botToken) {
+          return {
+            success: false,
+            message: 'Bot token is missing',
+          };
+        }
+
+        // Call Telegram's getMe API to verify the bot token
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+        const data = (await response.json()) as {
+          ok: boolean;
+          result?: { id: number; username?: string; first_name: string };
+          description?: string;
+        };
+
+        if (!data.ok || !data.result) {
+          return {
+            success: false,
+            message: `Invalid bot token: ${data.description || 'Unknown error'}`,
+          };
+        }
+
+        return {
+          success: true,
+          message: `Connected to Telegram bot: @${data.result.username || data.result.first_name} (ID: ${data.result.id})`,
+        };
+      }
+
+      case 'WHATSAPP': {
+        // TODO: Implement WhatsApp connection test
+        // Would need to call WhatsApp Business API to verify credentials
+        return {
+          success: true,
+          message: 'WhatsApp connection test not yet implemented',
+        };
+      }
+
+      case 'WEB': {
+        // Web widget doesn't need external connection test
+        return {
+          success: true,
+          message: 'Web widget is ready to use',
+        };
+      }
+
+      default:
+        return {
+          success: false,
+          message: `Connection test not implemented for channel: ${channel}`,
+        };
+    }
+  } catch (error: any) {
+    logger.error({ error, channel, tenantId }, 'Connection test failed');
+    return {
+      success: false,
+      message: `Connection test failed: ${error.message || 'Unknown error'}`,
+    };
+  }
 }
 
 /**

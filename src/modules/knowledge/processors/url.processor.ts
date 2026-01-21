@@ -1,13 +1,19 @@
 import type { DocumentProcessor, ExtractedDocument } from './processor.interface.js';
 import { RetryableError, NonRetryableError } from '../../../jobs/jobs.types.js';
 import { logger } from '../../../lib/logger.js';
+import { validateUrlForSSRF } from '../../../utils/url-validator.js';
 import * as cheerio from 'cheerio';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 const robotsParser = require('robots-parser') as (
   url: string,
   robotstxt: string
 ) => {
-  isAllowed: (url: string, ua?: string) => boolean | undefined;
+  isAllowed(url: string, ua?: string): boolean | undefined;
+  isDisallowed(url: string, ua?: string): boolean | undefined;
+  getCrawlDelay(ua?: string): number | undefined;
+  getSitemaps(): string[];
 };
 
 interface FetchOptions {
@@ -35,13 +41,19 @@ export class UrlProcessor implements DocumentProcessor {
     let url: URL;
     try {
       url = new URL(filename);
-    } catch (error) {
+    } catch {
       throw new NonRetryableError(`Invalid URL: ${filename}`);
     }
 
     // Validate URL scheme
     if (!['http:', 'https:'].includes(url.protocol)) {
       throw new NonRetryableError(`Unsupported URL scheme: ${url.protocol}`);
+    }
+
+    // SSRF Protection: Validate URL doesn't point to private/internal IPs
+    const ssrfCheck = await validateUrlForSSRF(url.href);
+    if (!ssrfCheck.valid) {
+      throw new NonRetryableError(`SSRF Protection: ${ssrfCheck.error}`);
     }
 
     // Check robots.txt

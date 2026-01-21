@@ -194,8 +194,48 @@ describe('Chat Controller', () => {
       expect(chatService.escalateConversation).toHaveBeenCalledWith(
         'tenant-1',
         conversationId,
-        'User frustrated'
+        'User frustrated',
+        { notes: undefined, priority: undefined }
       );
+    });
+
+    it('should pass notes and priority', async () => {
+      const conversationId = '123e4567-e89b-12d3-a456-426614174000';
+      vi.mocked(chatService.escalateConversation).mockResolvedValue({
+        escalated: true,
+        conversationId,
+        priority: 'high',
+      });
+
+      const request = mockFastifyRequest({
+        params: { id: conversationId },
+        body: { reason: 'Urgent issue', notes: 'Customer is VIP', priority: 'high' },
+      }) as any;
+      const reply = mockFastifyReply();
+
+      await controller.escalateConversation(request, reply);
+
+      expect(chatService.escalateConversation).toHaveBeenCalledWith(
+        'tenant-1',
+        conversationId,
+        'Urgent issue',
+        { notes: 'Customer is VIP', priority: 'high' }
+      );
+    });
+
+    it('should return validation error for invalid input', async () => {
+      const conversationId = '123e4567-e89b-12d3-a456-426614174000';
+
+      const request = mockFastifyRequest({
+        params: { id: conversationId },
+        body: { reason: 'x'.repeat(501) }, // Exceeds 500 char limit
+      }) as any;
+      const reply = mockFastifyReply();
+
+      await controller.escalateConversation(request, reply);
+
+      expect(reply.status).toHaveBeenCalledWith(400);
+      expect(reply.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 

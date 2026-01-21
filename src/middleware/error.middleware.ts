@@ -1,6 +1,8 @@
 import { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { logger } from '../lib/logger.js';
+import { RateLimitExceededError } from '../lib/rate-limit/index.js';
+import { captureException } from '../lib/sentry.js';
 
 export interface ApiError {
   success: false;
@@ -54,7 +56,27 @@ export function errorHandler(
     return;
   }
 
-  // Rate limit error
+  // User rate limit exceeded error (per-user chat limits)
+  if (error instanceof RateLimitExceededError) {
+    reply
+      .status(429)
+      .header('Retry-After', error.retryAfter.toString())
+      .header('X-RateLimit-Remaining', '0')
+      .send({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: `Rate limit exceeded. Please try again in ${error.retryAfter} seconds.`,
+          details: {
+            limitType: error.limitType,
+            retryAfter: error.retryAfter,
+          },
+        },
+      } satisfies ApiError);
+    return;
+  }
+
+  // Generic rate limit error
   if (error.statusCode === 429) {
     reply.status(429).send({
       success: false,
@@ -78,7 +100,13 @@ export function errorHandler(
     return;
   }
 
-  // Internal server error
+  // Internal server error - capture to Sentry
+  captureException(error, {
+    url: request.url,
+    method: request.method,
+    tenantId: request.tenant?.id,
+  });
+
   reply.status(500).send({
     success: false,
     error: {

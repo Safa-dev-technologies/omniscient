@@ -1,6 +1,11 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import * as chatService from './chat.service.js';
-import { chatMessageSchema, conversationIdParamSchema } from './chat.schema.js';
+import {
+  chatMessageSchema,
+  conversationIdParamSchema,
+  escalateSchema,
+  type EscalateInput,
+} from './chat.schema.js';
 
 export async function chat(request: FastifyRequest, reply: FastifyReply) {
   const input = chatMessageSchema.parse(request.body);
@@ -54,13 +59,30 @@ export async function sendMessage(
 }
 
 export async function escalateConversation(
-  request: FastifyRequest<{ Params: { id: string } }>,
+  request: FastifyRequest<{ Params: { id: string }; Body: EscalateInput }>,
   reply: FastifyReply
 ) {
   const { id } = conversationIdParamSchema.parse(request.params);
-  const body = request.body as { reason?: string };
 
-  const result = await chatService.escalateConversation(request.tenant!.id, id, body.reason);
+  // Validate body with schema - returns 400 on validation failure
+  const parseResult = escalateSchema.safeParse(request.body);
+  if (!parseResult.success) {
+    return reply.status(400).send({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid escalation data',
+        details: parseResult.error.flatten(),
+      },
+    });
+  }
+
+  const { reason, notes, priority } = parseResult.data;
+
+  const result = await chatService.escalateConversation(request.tenant!.id, id, reason, {
+    notes,
+    priority,
+  });
 
   return reply.send({ success: true, data: result });
 }

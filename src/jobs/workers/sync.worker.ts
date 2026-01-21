@@ -6,16 +6,17 @@
 import { Worker, Job } from 'bullmq';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
-import { documentQueue } from '../queue.js';
 import type { SyncSourceJob } from '../jobs.types.js';
 import { KnowledgeSourceType } from '@prisma/client';
 import { decryptJson } from '../../utils/crypto.js';
-import type { ConnectorCredentials, FetchedArticle } from '../../modules/knowledge/connectors/connector.interface.js';
+import type {
+  ConnectorCredentials,
+  FetchedArticle,
+} from '../../modules/knowledge/connectors/connector.interface.js';
 import { NotionConnector } from '../../modules/knowledge/connectors/index.js';
 import { getChunker } from '../../modules/knowledge/chunkers/index.js';
 import { generateEmbedding } from '../../lib/llm/index.js';
 import { getPineconeIndex } from '../../lib/pinecone.js';
-import { nanoid } from 'nanoid';
 
 const connection = {
   host: new URL(process.env.REDIS_URL || 'redis://localhost:6379').hostname,
@@ -48,18 +49,14 @@ async function processSyncJob(job: Job<SyncSourceJob>) {
   logger.info({ sourceId, tenantId, sourceType }, 'Processing sync job');
 
   try {
-    // Get source with credentials
-    const source = await prisma.knowledgeSource.findUnique({
-      where: { id: sourceId },
+    // Get source with credentials - use compound lookup with tenantId for isolation
+    // This prevents race conditions where sourceId could be reused after deletion
+    const source = await prisma.knowledgeSource.findFirst({
+      where: { id: sourceId, tenantId },
     });
 
     if (!source) {
-      throw new Error(`Source not found: ${sourceId}`);
-    }
-
-    // Verify tenant match
-    if (source.tenantId !== tenantId) {
-      throw new Error(`Source tenant mismatch: expected ${tenantId}, got ${source.tenantId}`);
+      throw new Error(`Source not found: ${sourceId} for tenant ${tenantId}`);
     }
 
     // Verify it's a connector type
@@ -96,7 +93,7 @@ async function processSyncJob(job: Job<SyncSourceJob>) {
 
     let added = 0;
     let updated = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
 
     // Process articles
     for await (const article of articles) {
@@ -207,12 +204,13 @@ async function addArticle(
     const vectorId = `chunk_${sourceId}_${i.toString().padStart(5, '0')}`;
 
     // Store chunk in database
-    const dbChunk = await prisma.knowledgeChunk.create({
+    await prisma.knowledgeChunk.create({
       data: {
         id: vectorId,
         sourceId,
         text: chunk.text,
         tokenCount: chunk.tokenCount,
+        chunkIndex: chunk.index,
         vectorId,
         metadata: {
           title: article.title,
@@ -222,7 +220,6 @@ async function addArticle(
           section: article.section,
           category: article.category,
           author: article.author,
-          chunkIndex: chunk.index,
           ...article.metadata,
         } as any,
       },
@@ -264,7 +261,7 @@ async function addArticle(
 async function updateArticle(
   sourceId: string,
   article: FetchedArticle,
-  existingChunkId: string
+  _existingChunkId: string
 ): Promise<void> {
   // Get source
   const source = await prisma.knowledgeSource.findUnique({
@@ -299,10 +296,10 @@ async function updateArticle(
 
   const namespace = `tenant_${sourceForNamespace.tenantId}`;
   const index = await getPineconeIndex();
-  
+
   // Delete vectors from Pinecone
   if (oldChunks.length > 0) {
-    const vectorIds = oldChunks.map(c => c.id);
+    const vectorIds = oldChunks.map((c) => c.id);
     await index.namespace(namespace).deleteMany(vectorIds);
   }
 
@@ -334,15 +331,12 @@ const syncWorker = new Worker('external-sync', processSyncJob, {
   concurrency: 5, // Process up to 5 sync jobs concurrently
 });
 
-syncWorker.on('completed', job => {
+syncWorker.on('completed', (job) => {
   logger.info({ jobId: job.id, sourceId: job.data.sourceId }, 'Sync job completed');
 });
 
 syncWorker.on('failed', (job, error) => {
-  logger.error(
-    { jobId: job?.id, sourceId: job?.data.sourceId, error },
-    'Sync job failed'
-  );
+  logger.error({ jobId: job?.id, sourceId: job?.data.sourceId, error }, 'Sync job failed');
 });
 
 logger.info('Sync worker started');

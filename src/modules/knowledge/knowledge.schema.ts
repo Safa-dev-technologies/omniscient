@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { safePatternSchema, MAX_PATTERNS_COUNT } from '../../utils/regex-validator.js';
 
 export const uploadSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -16,6 +17,12 @@ export const searchSchema = z.object({
   q: z.string().min(1).max(500),
   limit: z.coerce.number().min(1).max(20).default(5),
   threshold: z.coerce.number().min(0).max(1).default(0.3),
+  // Security: Control how much text is returned in results
+  // 'full' = entire chunk text (default for backwards compatibility)
+  // 'snippet' = truncated text with match highlighting (recommended)
+  // 'none' = no text, only metadata
+  textMode: z.enum(['full', 'snippet', 'none']).default('snippet'),
+  snippetLength: z.coerce.number().min(50).max(500).default(200),
 });
 
 export const crawlUrlSchema = z.object({
@@ -26,8 +33,15 @@ export const crawlUrlSchema = z.object({
       crawlSitemap: z.boolean().default(false),
       maxDepth: z.number().int().min(0).max(3).default(0),
       maxPages: z.number().int().min(1).max(100).default(10),
-      includePatterns: z.array(z.string()).optional(),
-      excludePatterns: z.array(z.string()).optional(),
+      // Patterns are validated for ReDoS safety
+      includePatterns: z
+        .array(safePatternSchema)
+        .max(MAX_PATTERNS_COUNT, `Maximum ${MAX_PATTERNS_COUNT} include patterns allowed`)
+        .optional(),
+      excludePatterns: z
+        .array(safePatternSchema)
+        .max(MAX_PATTERNS_COUNT, `Maximum ${MAX_PATTERNS_COUNT} exclude patterns allowed`)
+        .optional(),
     })
     .optional(),
 });

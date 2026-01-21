@@ -444,12 +444,12 @@ describe('Webhook Middleware', () => {
       expect(result).toEqual({ allowed: false, retryAfter: 30 });
     });
 
-    it('should allow request on Redis error (fail open)', async () => {
+    it('should block request on Redis error (fail closed)', async () => {
       vi.mocked(redis.incr).mockRejectedValue(new Error('Redis connection failed'));
 
       const result = await webhookRateLimit('WHATSAPP', 'tenant-123');
 
-      expect(result).toEqual({ allowed: true });
+      expect(result).toEqual({ allowed: false, retryAfter: 60 });
     });
   });
 

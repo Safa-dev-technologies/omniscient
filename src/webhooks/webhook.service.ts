@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 import { decryptJson } from '../utils/crypto.js';
+import { RateLimitExceededError } from '../lib/rate-limit/index.js';
 import type { Channel } from '@prisma/client';
 import type { ChannelAdapter } from '../adapters/adapter.interface.js';
 import type { AdapterConfig, NormalizedMessage } from '../adapters/adapter.types.js';
@@ -230,6 +231,35 @@ export async function processIncomingMessage(
       messageId: normalizedMessage.externalId,
     };
   } catch (error: any) {
+    // Handle rate limit errors specially - send user-facing message
+    if (error instanceof RateLimitExceededError) {
+      logger.info(
+        { tenantId, channel, userId: error.userId, retryAfter: error.retryAfter },
+        'User rate limited on webhook'
+      );
+
+      // Try to send rate limit message to user
+      try {
+        const adapter = await getAdapter(tenantId, channel);
+        const normalizedMessage = await adapter.parseIncoming(payload, headers);
+
+        if (normalizedMessage) {
+          await adapter.sendMessage({
+            externalUserId: normalizedMessage.externalUserId,
+            externalConversationId: normalizedMessage.externalConversationId,
+            content: `You're sending messages too quickly. Please wait ${error.retryAfter} seconds before sending another message.`,
+          });
+        }
+      } catch (sendError) {
+        logger.warn({ sendError, tenantId, channel }, 'Failed to send rate limit message');
+      }
+
+      return {
+        success: false,
+        error: `Rate limit exceeded. Retry after ${error.retryAfter} seconds.`,
+      };
+    }
+
     logger.error({ error, tenantId, channel }, 'Error processing incoming message');
     return {
       success: false,

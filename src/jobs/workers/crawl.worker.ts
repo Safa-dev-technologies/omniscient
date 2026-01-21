@@ -11,6 +11,51 @@ import { crawlManager } from '../../modules/knowledge/crawlers/crawl.manager.js'
 import { parseSitemap, findSitemap } from '../../modules/knowledge/crawlers/sitemap.parser.js';
 import { urlProcessor } from '../../modules/knowledge/processors/url.processor.js';
 import { getChunker } from '../../modules/knowledge/chunkers/index.js';
+import { validateUrlForSSRF } from '../../utils/url-validator.js';
+
+const MAX_REDIRECTS = 5;
+
+/**
+ * Fetch URL with SSRF-safe redirect handling
+ * Validates each redirect destination before following
+ */
+async function safeFetchWithRedirects(
+  url: string,
+  options: RequestInit = {},
+  redirectCount = 0
+): Promise<Response> {
+  if (redirectCount > MAX_REDIRECTS) {
+    throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
+  }
+
+  // Validate URL before fetching
+  const ssrfCheck = await validateUrlForSSRF(url);
+  if (!ssrfCheck.valid) {
+    throw new Error(`SSRF Protection: ${ssrfCheck.error}`);
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    redirect: 'manual', // Don't auto-follow redirects
+  });
+
+  // Handle redirects manually with SSRF validation
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    if (!location) {
+      throw new Error(`Redirect response missing location header`);
+    }
+
+    // Resolve relative URLs
+    const redirectUrl = new URL(location, url).href;
+
+    logger.debug({ from: url, to: redirectUrl }, 'Following redirect with SSRF check');
+
+    return safeFetchWithRedirects(redirectUrl, options, redirectCount + 1);
+  }
+
+  return response;
+}
 
 const connection = {
   host: new URL(env.REDIS_URL).hostname,
@@ -185,23 +230,40 @@ async function processCrawlPage(job: Job<CrawlPageJob>) {
     // Note: We need to fetch the HTML again to extract links, or store it
     // For now, we'll fetch it again (could be optimized)
     if (depth < state.options.maxDepth) {
-      // Re-fetch HTML to extract links (could be optimized by storing HTML)
-      const html = await fetch(url).then((r) => r.text());
-      const links = urlProcessor.extractLinks(html, url);
-      logger.info({ sourceId, url, linkCount: links.length }, 'Extracted links from page');
+      try {
+        // Re-fetch HTML to extract links using SSRF-safe fetch
+        const response = await safeFetchWithRedirects(url);
+        const html = await response.text();
+        const links = urlProcessor.extractLinks(html, url);
+        logger.info({ sourceId, url, linkCount: links.length }, 'Extracted links from page');
 
-      for (const link of links) {
-        const added = await crawlManager.addUrl(sourceId, link, depth + 1);
-        if (added) {
-          // Queue new page job
-          await crawlQueue.add('CRAWL_PAGE', {
-            type: 'CRAWL_PAGE',
-            sourceId,
-            tenantId,
-            url: link,
-            depth: depth + 1,
-          });
+        for (const link of links) {
+          // SSRF Protection: Validate discovered links before adding
+          const linkSsrfCheck = await validateUrlForSSRF(link);
+          if (!linkSsrfCheck.valid) {
+            logger.debug(
+              { sourceId, link, error: linkSsrfCheck.error },
+              'Discovered link blocked by SSRF protection'
+            );
+            continue;
+          }
+
+          const added = await crawlManager.addUrl(sourceId, link, depth + 1);
+          if (added) {
+            // Queue new page job
+            await crawlQueue.add('CRAWL_PAGE', {
+              type: 'CRAWL_PAGE',
+              sourceId,
+              tenantId,
+              url: link,
+              depth: depth + 1,
+            });
+          }
         }
+      } catch (fetchError) {
+        // Log but don't fail the job - link extraction is optional
+        const fetchMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+        logger.warn({ sourceId, url, error: fetchMsg }, 'Failed to fetch URL for link extraction');
       }
     }
 

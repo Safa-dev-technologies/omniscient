@@ -203,7 +203,6 @@ export class NotionConnector implements Connector {
           yield* this.fetchPageAndChildren(client, block.id);
         }
       }
-      // eslint-disable-line @typescript-eslint/no-unused-vars - error is used in logger
 
       // Rate limiting
       await this.delay(350);

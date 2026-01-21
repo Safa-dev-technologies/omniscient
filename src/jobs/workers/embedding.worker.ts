@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import { prisma } from '../../lib/prisma.js';
 import { generateEmbeddings } from '../../lib/llm/index.js';
 import { upsertVectors } from '../../lib/pinecone.js';
@@ -25,6 +25,7 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
   const { sourceId, tenantId, chunks } = job.data;
   const startTime = Date.now();
   let embeddingTimeMs = 0;
+  let jobStarted = false; // Track if rate limiter startJob was called
 
   logger.info(
     { sourceId, chunkCount: chunks.length, attempt: job.attemptsMade + 1 },
@@ -38,11 +39,12 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
     // Delay and retry with jitter (20-40s)
     const delay = 30000 + Math.floor(Math.random() * 20000);
     await job.moveToDelayed(Date.now() + delay);
-    return;
+    return; // Return early - don't call endJob since startJob wasn't called
   }
 
   // Mark job as started
   await rateLimiter.startJob(tenantId, job.id!);
+  jobStarted = true;
 
   try {
     const source = await prisma.knowledgeSource.findUnique({
@@ -59,7 +61,22 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
       return;
     }
 
-    // Update status
+    // Check if chunks already exist for this source (prevents duplicate processing)
+    const existingChunks = await prisma.knowledgeChunk.count({
+      where: { sourceId },
+    });
+
+    if (existingChunks > 0) {
+      logger.info({ sourceId, existingChunks }, 'Chunks already exist, skipping duplicate job');
+      // Update status to INDEXED since chunks exist (we already returned early if status was INDEXED)
+      await prisma.knowledgeSource.update({
+        where: { id: sourceId },
+        data: { status: 'INDEXED', indexedAt: new Date() },
+      });
+      return;
+    }
+
+    // Update status to EMBEDDING
     await prisma.knowledgeSource.update({
       where: { id: sourceId },
       data: { status: 'EMBEDDING' },
@@ -173,35 +190,43 @@ async function generateEmbeddingsJob(job: Job<GenerateEmbeddingsJob>) {
       'Embeddings complete'
     );
   } catch (error) {
-    // Always decrement concurrent count on error
-    await rateLimiter.endJob(tenantId);
-    // Classify error
+    // Classify error and handle appropriately
     if (isRetryable(error)) {
       logger.warn(
         { sourceId, error, attempt: job.attemptsMade + 1 },
         'Retryable error in embedding generation'
       );
+      // Throw to trigger BullMQ retry
       throw new RetryableError('Temporary failure', error as Error);
     }
 
-    // Non-retryable: move to dead letter
+    // Non-retryable: update status and throw UnrecoverableError
     logger.error({ sourceId, error }, 'Non-retryable error in embedding generation');
+
+    // Update source status to FAILED
+    await prisma.knowledgeSource
+      .update({
+        where: { id: sourceId },
+        data: {
+          status: 'FAILED',
+          statusMessage: formatErrorMessage(error),
+        },
+      })
+      .catch((updateError) => {
+        logger.error({ sourceId, error: updateError }, 'Failed to update source status');
+      });
+
+    // Move to dead letter queue for inspection
     await moveToDeadLetter(job, error, 'embedding-generation');
 
-    // Update source status
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
-      data: {
-        status: 'FAILED',
-        statusMessage: formatErrorMessage(error),
-      },
-    });
-
-    // Don't throw - job is "complete" (moved to DLQ)
-    return;
+    // Throw UnrecoverableError so BullMQ marks job as failed (no retries)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new UnrecoverableError(errorMessage);
   } finally {
-    // Always decrement concurrent count
-    await rateLimiter.endJob(tenantId);
+    // Only decrement concurrent count if job was actually started
+    if (jobStarted) {
+      await rateLimiter.endJob(tenantId);
+    }
   }
 }
 

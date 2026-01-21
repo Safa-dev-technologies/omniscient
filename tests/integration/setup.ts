@@ -28,9 +28,9 @@ export async function globalSetup() {
     await redis.connect();
   }
 
-  // Create test tenant
+  // Create test tenant with verification
   try {
-    await prisma.tenant.upsert({
+    const tenant = await prisma.tenant.upsert({
       where: { id: TEST_CONFIG.tenantId },
       create: {
         id: TEST_CONFIG.tenantId,
@@ -42,38 +42,84 @@ export async function globalSetup() {
         slug: TEST_CONFIG.tenantSlug,
       },
     });
+
+    // Verify tenant was created
+    if (!tenant || tenant.id !== TEST_CONFIG.tenantId) {
+      throw new Error(`Failed to create/verify test tenant: ${TEST_CONFIG.tenantId}`);
+    }
   } catch (error) {
-    console.warn('Test tenant may already exist:', error);
+    console.error('Failed to setup test tenant:', error);
+    throw new Error(
+      `Test tenant setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
   }
 }
 
 /**
  * Global teardown - runs once after all tests
+ * Deletes in order respecting FK constraints
  */
 export async function globalTeardown() {
-  // Cleanup test data
+  // Cleanup test data in FK-safe order
   try {
-    // Delete all test knowledge sources and chunks
-    await prisma.knowledgeChunk.deleteMany({
-      where: {
-        source: {
-          tenantId: TEST_CONFIG.tenantId,
-        },
-      },
-    });
-
-    await prisma.knowledgeSource.deleteMany({
-      where: { tenantId: TEST_CONFIG.tenantId },
-    });
-
-    // Delete test tenant
-    await prisma.tenant
-      .delete({
-        where: { id: TEST_CONFIG.tenantId },
+    // 1. Delete escalations (references conversations)
+    await prisma.escalation
+      .deleteMany({
+        where: { conversation: { tenantId: TEST_CONFIG.tenantId } },
       })
-      .catch(() => {
-        // Ignore if already deleted
-      });
+      .catch(() => {});
+
+    // 2. Delete messages (references conversations)
+    await prisma.message
+      .deleteMany({
+        where: { conversation: { tenantId: TEST_CONFIG.tenantId } },
+      })
+      .catch(() => {});
+
+    // 3. Delete conversations (references users, tenants)
+    await prisma.conversation
+      .deleteMany({
+        where: { tenantId: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {});
+
+    // 4. Delete knowledge chunks (references sources)
+    await prisma.knowledgeChunk
+      .deleteMany({
+        where: { source: { tenantId: TEST_CONFIG.tenantId } },
+      })
+      .catch(() => {});
+
+    // 5. Delete knowledge sources (references tenants)
+    await prisma.knowledgeSource
+      .deleteMany({
+        where: { tenantId: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {});
+
+    // 6. Delete channel configs (references tenants)
+    await prisma.channelConfig
+      .deleteMany({
+        where: { tenantId: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {});
+
+    // 7. Delete API keys (references tenants)
+    await prisma.apiKey
+      .deleteMany({
+        where: { tenantId: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {});
+
+    // 8. Delete users (references tenants)
+    await prisma.user
+      .deleteMany({
+        where: { tenantId: TEST_CONFIG.tenantId },
+      })
+      .catch(() => {});
+
+    // 9. Finally delete tenant
+    await prisma.tenant.delete({ where: { id: TEST_CONFIG.tenantId } }).catch(() => {});
 
     // Clean up Pinecone namespace
     try {
@@ -100,13 +146,20 @@ export async function globalTeardown() {
 export async function testSetup() {
   // Clear rate limit keys to ensure clean state for each test
   // This prevents jobs from being blocked by stale concurrent counters from previous tests
+  // Also clear tenant-level API rate limits to prevent 429s in sequential tests
   await Promise.all([
+    // Worker rate limits
     redis.del(`ratelimit:document-processing:${TEST_CONFIG.tenantId}:concurrent`),
     redis.del(`ratelimit:document-processing:${TEST_CONFIG.tenantId}:minute`),
     redis.del(`ratelimit:document-processing:${TEST_CONFIG.tenantId}:hour`),
     redis.del(`ratelimit:embedding-processing:${TEST_CONFIG.tenantId}:concurrent`),
     redis.del(`ratelimit:embedding-processing:${TEST_CONFIG.tenantId}:minute`),
     redis.del(`ratelimit:embedding-processing:${TEST_CONFIG.tenantId}:hour`),
+    // Tenant API rate limits (from tenant-rate-limit.middleware.ts)
+    redis.del(`ratelimit:tenant:chat:${TEST_CONFIG.tenantId}`),
+    redis.del(`ratelimit:tenant:upload:${TEST_CONFIG.tenantId}`),
+    redis.del(`ratelimit:tenant:crawl:${TEST_CONFIG.tenantId}`),
+    redis.del(`ratelimit:tenant:search:${TEST_CONFIG.tenantId}`),
   ]).catch(() => {
     // Ignore errors if Redis keys don't exist
   });

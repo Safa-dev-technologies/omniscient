@@ -14,6 +14,9 @@ vi.mock('../../../src/lib/prisma.js', () => {
       findFirst: vi.fn(),
       create: vi.fn(),
     },
+    tenant: {
+      findUnique: vi.fn().mockResolvedValue({ settings: null }),
+    },
     conversation: {
       findFirst: vi.fn(),
       update: vi.fn(),
@@ -42,6 +45,29 @@ vi.mock('../../../src/modules/conversation/conversation.service.js', () => ({
 
 vi.mock('../../../src/lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock('../../../src/lib/redis.js', () => ({
+  redis: {},
+}));
+
+vi.mock('../../../src/lib/rate-limit/index.js', () => ({
+  getUserRateLimiter: vi.fn(() => ({
+    checkAndRecord: vi.fn().mockResolvedValue({ allowed: true, remaining: 9 }),
+  })),
+  RateLimitExceededError: class RateLimitExceededError extends Error {
+    code = 'RATE_LIMIT_EXCEEDED';
+    statusCode = 429;
+    retryAfter: number;
+    limitType: 'minute' | 'hour';
+    userId: string;
+    constructor(params: { retryAfter: number; limitType: 'minute' | 'hour'; userId: string }) {
+      super(`Rate limit exceeded (${params.limitType})`);
+      this.retryAfter = params.retryAfter;
+      this.limitType = params.limitType;
+      this.userId = params.userId;
+    }
+  },
 }));
 
 const { prisma } = await import('../../../src/lib/prisma.js');

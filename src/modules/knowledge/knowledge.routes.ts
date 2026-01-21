@@ -1,15 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { requirePermission } from '../../middleware/permission.middleware.js';
+import { tenantRateLimit } from '../../middleware/tenant-rate-limit.middleware.js';
 import * as controller from './knowledge.controller.js';
 
 export async function knowledgeRoutes(fastify: FastifyInstance) {
   // All routes require authentication
   fastify.addHook('preHandler', authMiddleware);
 
-  // Upload document
+  // Upload document (rate limited)
   fastify.post('/upload', {
-    preHandler: requirePermission('knowledge'),
+    preHandler: [requirePermission('knowledge'), tenantRateLimit('upload')],
     handler: controller.uploadDocument,
   });
 
@@ -37,15 +38,15 @@ export async function knowledgeRoutes(fastify: FastifyInstance) {
     handler: controller.reindexSource,
   });
 
-  // Test search
+  // Test search (rate limited)
   fastify.get('/search', {
-    preHandler: requirePermission('knowledge'),
+    preHandler: [requirePermission('knowledge'), tenantRateLimit('search')],
     handler: controller.searchKnowledge,
   });
 
-  // Crawl URL
+  // Crawl URL (rate limited)
   fastify.post('/url', {
-    preHandler: requirePermission('knowledge'),
+    preHandler: [requirePermission('knowledge'), tenantRateLimit('crawl')],
     handler: controller.crawlUrl,
   });
 

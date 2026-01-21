@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { requirePermission } from '../../middleware/permission.middleware.js';
+import { tenantRateLimit } from '../../middleware/tenant-rate-limit.middleware.js';
 import * as controller from './chat.controller.js';
 
 export async function chatRoutes(fastify: FastifyInstance) {
@@ -9,7 +10,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
 
   // Simple stateless chat (creates/continues conversation automatically)
   fastify.post('/', {
-    preHandler: requirePermission('chat'),
+    preHandler: [requirePermission('chat'), tenantRateLimit('chat')],
     handler: controller.chat,
   });
 

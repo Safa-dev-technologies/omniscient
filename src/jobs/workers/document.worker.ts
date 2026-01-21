@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import { prisma } from '../../lib/prisma.js';
 import { storage } from '../../lib/storage/index.js';
 import { getProcessor } from '../../modules/knowledge/processors/index.js';
@@ -31,6 +31,7 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
     chunking: 0,
     queueing: 0,
   };
+  let jobStarted = false; // Track if rate limiter startJob was called
 
   logger.info({ sourceId, attempt: job.attemptsMade + 1 }, 'Processing document');
 
@@ -41,11 +42,12 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
     // Delay and retry with jitter (20-40s)
     const delay = 30000 + Math.floor(Math.random() * 20000);
     await job.moveToDelayed(Date.now() + delay);
-    return;
+    return; // Return early - don't call endJob since startJob wasn't called
   }
 
   // Mark job as started
   await rateLimiter.startJob(tenantId, job.id!);
+  jobStarted = true;
 
   try {
     // Get source record
@@ -57,17 +59,28 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
       throw new NonRetryableError('Source not found or missing required fields');
     }
 
-    // Check if already processed (idempotency)
-    if (source.status === 'INDEXED' || source.status === 'EMBEDDING') {
-      logger.info({ sourceId, status: source.status }, 'Source already processed, skipping');
+    // Check if already processed or currently being processed (idempotency)
+    // Skip if: INDEXED (done), EMBEDDING (past document phase), EXTRACTING/CHUNKING (in progress)
+    if (['INDEXED', 'EMBEDDING', 'EXTRACTING', 'CHUNKING'].includes(source.status)) {
+      logger.info(
+        { sourceId, status: source.status },
+        'Source already processed or in progress, skipping'
+      );
       return;
     }
 
-    // Update status
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
+    // Only process if status is PENDING (or FAILED for retries)
+    // Use atomic update to prevent race conditions with duplicate jobs
+    const updated = await prisma.knowledgeSource.updateMany({
+      where: { id: sourceId, status: { in: ['PENDING', 'FAILED'] } },
       data: { status: 'EXTRACTING' },
     });
+
+    if (updated.count === 0) {
+      // Status changed between check and update - another job got here first
+      logger.info({ sourceId }, 'Source status changed, skipping duplicate job');
+      return;
+    }
 
     // Download file
     const buffer = await storage.download(source.storagePath);
@@ -82,6 +95,13 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
     const extractStart = Date.now();
     const extracted = await processor.extract(buffer, source.originalFilename || 'document');
     timings.extraction = Date.now() - extractStart;
+
+    // Validate extracted content before chunking
+    if (!extracted.text || extracted.text.trim().length < 10) {
+      throw new NonRetryableError(
+        'Document contains no extractable text content. This may be a scanned/image-only document.'
+      );
+    }
 
     // Update status
     await prisma.knowledgeSource.update({
@@ -163,23 +183,20 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
       'Document processing failed'
     );
 
-    // Always decrement concurrent count on error
-    await rateLimiter.endJob(tenantId);
-
-    // Classify error
+    // Classify error and handle appropriately
     if (isRetryable(error)) {
       logger.warn(
         { sourceId, error, attempt: job.attemptsMade + 1 },
         'Retryable error in document processing'
       );
+      // Throw to trigger BullMQ retry
       throw new RetryableError('Temporary failure', error as Error);
     }
 
-    // Non-retryable: move to dead letter
+    // Non-retryable: update status and throw UnrecoverableError
     logger.error({ sourceId, error }, 'Non-retryable error in document processing');
-    await moveToDeadLetter(job, error, 'document-processing');
 
-    // Update source status
+    // Update source status to FAILED
     await prisma.knowledgeSource
       .update({
         where: { id: sourceId },
@@ -192,11 +209,17 @@ async function processDocument(job: Job<ProcessDocumentJob>) {
         logger.error({ sourceId, error: updateError }, 'Failed to update source status');
       });
 
-    // Don't throw - job is "complete" (moved to DLQ)
-    return;
+    // Move to dead letter queue for inspection
+    await moveToDeadLetter(job, error, 'document-processing');
+
+    // Throw UnrecoverableError so BullMQ marks job as failed (no retries)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new UnrecoverableError(errorMessage);
   } finally {
-    // Always decrement concurrent count
-    await rateLimiter.endJob(tenantId);
+    // Only decrement concurrent count if job was actually started
+    if (jobStarted) {
+      await rateLimiter.endJob(tenantId);
+    }
   }
 }
 

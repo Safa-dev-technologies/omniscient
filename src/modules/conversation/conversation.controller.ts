@@ -152,12 +152,13 @@ export async function transitionStatus(
  * Get conversation history (messages)
  */
 export async function getHistory(
-  request: FastifyRequest<{ Params: { id: string }; Querystring: { limit?: number } }>,
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { limit?: string } }>,
   reply: FastifyReply
 ) {
   const { id } = conversationIdParamSchema.parse(request.params);
   const tenantId = request.tenant!.id;
-  const limit = request.query?.limit;
+  // Parse limit from query string to number
+  const limit = request.query?.limit ? parseInt(request.query.limit, 10) : undefined;
 
   const messages = await conversationService.getConversationHistory(tenantId, id, limit);
   return reply.send({ success: true, data: messages });

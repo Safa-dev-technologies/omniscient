@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { gunzip as gunzipSync } from 'zlib';
 import { promisify } from 'util';
 import { logger } from '../../../lib/logger.js';
+import { validateUrlForSSRF } from '../../../utils/url-validator.js';
 import type { SitemapUrl, SitemapParserOptions } from './crawl.types.js';
 
 const gunzip = promisify(gunzipSync);
@@ -11,6 +12,9 @@ const DEFAULT_OPTIONS: Required<SitemapParserOptions> = {
   maxUrls: 10000, // Maximum URLs to parse
   userAgent: 'OmniscientBot/1.0 (+https://omniscient.ai/bot)',
 };
+
+// Maximum sitemap size to prevent memory exhaustion attacks (50MB)
+const MAX_SITEMAP_SIZE = 50 * 1024 * 1024;
 
 /**
  * Parse sitemap.xml and extract URLs
@@ -23,6 +27,13 @@ export async function parseSitemap(
   const urls: SitemapUrl[] = [];
 
   try {
+    // SSRF Protection: Validate sitemap URL before fetching
+    const ssrfCheck = await validateUrlForSSRF(sitemapUrl);
+    if (!ssrfCheck.valid) {
+      logger.warn({ sitemapUrl, error: ssrfCheck.error }, 'Sitemap URL blocked by SSRF protection');
+      throw new Error(`SSRF Protection: ${ssrfCheck.error}`);
+    }
+
     // Fetch sitemap
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), opts.timeout);
@@ -59,10 +70,19 @@ export async function parseSitemap(
     let xmlText: string;
     if (isGzipped) {
       const buffer = await response.arrayBuffer();
+      // Check compressed size first
+      if (buffer.byteLength > MAX_SITEMAP_SIZE) {
+        throw new Error(`Sitemap too large: ${buffer.byteLength} bytes (max ${MAX_SITEMAP_SIZE})`);
+      }
       const decompressed = await gunzip(Buffer.from(buffer));
       xmlText = decompressed.toString('utf-8');
     } else {
       xmlText = await response.text();
+    }
+
+    // Validate XML size to prevent memory exhaustion (billion laughs, etc.)
+    if (xmlText.length > MAX_SITEMAP_SIZE) {
+      throw new Error(`Sitemap too large: ${xmlText.length} bytes (max ${MAX_SITEMAP_SIZE})`);
     }
 
     // Parse XML
@@ -175,6 +195,14 @@ export async function findSitemap(
 
   try {
     const url = new URL(baseUrl);
+
+    // SSRF Protection: Validate base URL before checking for sitemaps
+    const ssrfCheck = await validateUrlForSSRF(baseUrl);
+    if (!ssrfCheck.valid) {
+      logger.warn({ baseUrl, error: ssrfCheck.error }, 'Base URL blocked by SSRF protection');
+      return null;
+    }
+
     const robotsUrl = `${url.protocol}//${url.host}/robots.txt`;
 
     // Check robots.txt for Sitemap directive
@@ -199,7 +227,7 @@ export async function findSitemap(
           return sitemapMatches[0][1].trim();
         }
       }
-    } catch (error) {
+    } catch {
       clearTimeout(timeoutId);
       // robots.txt not found or error - continue to common locations
     }

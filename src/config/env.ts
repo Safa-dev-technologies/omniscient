@@ -17,13 +17,16 @@ const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().url(),
 
-  // Pinecone
+  // Pinecone (with optional secondary key for zero-downtime rotation)
   PINECONE_API_KEY: z.string().min(1),
+  PINECONE_API_KEY_SECONDARY: z.string().optional(),
   PINECONE_INDEX: z.string().default('omniscient-knowledge'),
 
-  // LLM
+  // LLM (with optional secondary keys for zero-downtime rotation)
   GROQ_API_KEY: z.string().min(1),
+  GROQ_API_KEY_SECONDARY: z.string().optional(),
   OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY_SECONDARY: z.string().optional(),
 
   // Embeddings (OpenAI - 8K token limit)
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
@@ -55,11 +58,18 @@ const envSchema = z.object({
   // Master API Key (optional - for tenant management)
   MASTER_API_KEY: z.string().min(20).startsWith('master_').optional(),
 
+  // Admin Panel Authentication
+  ADMIN_USERNAME: z.string().min(1).optional(),
+  ADMIN_PASSWORD_HASH: z.string().min(1).optional(),
+
   // Encryption (for credential storage)
   ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-f]{64}$/i)
     .optional(),
+
+  // Error Tracking (Sentry)
+  SENTRY_DSN: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

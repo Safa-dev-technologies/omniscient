@@ -1,20 +1,30 @@
-import { Pinecone } from '@pinecone-database/pinecone';
+import { Pinecone, Index } from '@pinecone-database/pinecone';
 import { env } from '../config/index.js';
 import { logger } from './logger.js';
+import { withKeyRotation, createKeyPair } from '../utils/key-rotation.js';
 
-let pineconeClient: Pinecone | null = null;
+// Key pair for zero-downtime rotation
+const pineconeKeys = createKeyPair(env.PINECONE_API_KEY, env.PINECONE_API_KEY_SECONDARY);
 
-export function getPinecone(): Pinecone {
-  if (!pineconeClient) {
-    pineconeClient = new Pinecone({
-      apiKey: env.PINECONE_API_KEY,
-    });
+// Cache clients by API key to avoid recreating
+const clientCache = new Map<string, Pinecone>();
+
+function getClientForKey(apiKey: string): Pinecone {
+  let client = clientCache.get(apiKey);
+  if (!client) {
+    client = new Pinecone({ apiKey });
+    clientCache.set(apiKey, client);
     logger.info('Pinecone client initialized');
   }
-  return pineconeClient;
+  return client;
 }
 
-export function getPineconeIndex() {
+export function getPinecone(): Pinecone {
+  // Return primary client for backwards compatibility
+  return getClientForKey(pineconeKeys.primary);
+}
+
+export function getPineconeIndex(): Index {
   return getPinecone().index(env.PINECONE_INDEX);
 }
 
@@ -26,8 +36,12 @@ export async function upsertVectors(
     metadata?: Record<string, string | number | boolean>;
   }>
 ) {
-  const index = getPineconeIndex();
-  await index.namespace(namespace).upsert(vectors);
+  // Use key rotation for automatic fallback
+  return withKeyRotation({ serviceName: 'pinecone', keys: pineconeKeys }, async (apiKey) => {
+    const client = getClientForKey(apiKey);
+    const index = client.index(env.PINECONE_INDEX);
+    await index.namespace(namespace).upsert(vectors);
+  });
 }
 
 export async function queryVectors(
@@ -36,17 +50,25 @@ export async function queryVectors(
   topK: number = 10,
   minScore: number = 0.7
 ) {
-  const index = getPineconeIndex();
-  const results = await index.namespace(namespace).query({
-    vector,
-    topK,
-    includeMetadata: true,
-  });
+  // Use key rotation for automatic fallback
+  return withKeyRotation({ serviceName: 'pinecone', keys: pineconeKeys }, async (apiKey) => {
+    const client = getClientForKey(apiKey);
+    const index = client.index(env.PINECONE_INDEX);
+    const results = await index.namespace(namespace).query({
+      vector,
+      topK,
+      includeMetadata: true,
+    });
 
-  return results.matches?.filter((m) => (m.score ?? 0) >= minScore) ?? [];
+    return results.matches?.filter((m) => (m.score ?? 0) >= minScore) ?? [];
+  });
 }
 
 export async function deleteNamespace(namespace: string) {
-  const index = getPineconeIndex();
-  await index.namespace(namespace).deleteAll();
+  // Use key rotation for automatic fallback
+  return withKeyRotation({ serviceName: 'pinecone', keys: pineconeKeys }, async (apiKey) => {
+    const client = getClientForKey(apiKey);
+    const index = client.index(env.PINECONE_INDEX);
+    await index.namespace(namespace).deleteAll();
+  });
 }

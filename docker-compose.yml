@@ -1,4 +1,5 @@
-version: '3.8'
+# Production Docker Compose for Omniscient
+# Note: 'version' key removed - deprecated in Docker Compose V2+
 
 services:
   postgres:
@@ -6,7 +7,7 @@ services:
     container_name: omniscient-postgres
     environment:
       POSTGRES_USER: omniscient
-      POSTGRES_PASSWORD: omniscient
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omniscient}
       POSTGRES_DB: omniscient
     ports:
       - '5433:5432'
@@ -14,32 +15,66 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U omniscient']
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
     networks:
       - omniscient-network
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: omniscient-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     ports:
       - '6379:6379'
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
     networks:
       - omniscient-network
+    restart: unless-stopped
 
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: production
     container_name: omniscient-app
     ports:
       - '3000:3000'
@@ -47,24 +82,54 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
-      DATABASE_URL: postgresql://omniscient:omniscient@postgres:5432/omniscient
+      DATABASE_URL: postgresql://omniscient:${POSTGRES_PASSWORD:-omniscient}@postgres:5432/omniscient
       REDIS_URL: redis://redis:6379
-      # Required - set these in .env or override here
+      # Required - set these via env vars or .env file
       PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
       GROQ_API_KEY: ${GROQ_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      # Optional
-      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
+      # Storage
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       STORAGE_LOCAL_PATH: /app/uploads
+      # Admin & Security
       MASTER_API_KEY: ${MASTER_API_KEY:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # AWS Secrets Manager (optional)
+      AWS_SECRETS_ARN: ${AWS_SECRETS_ARN:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     volumes:
       - ./uploads:/app/uploads
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:3000/health/ready']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
     networks:
       - omniscient-network
     restart: unless-stopped
@@ -73,19 +138,25 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: production
     container_name: omniscient-workers
-    command: node dist/workers.js
-    working_dir: /app
+    command: ['node', 'dist/workers.js']
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://omniscient:omniscient@postgres:5432/omniscient
+      DATABASE_URL: postgresql://omniscient:${POSTGRES_PASSWORD:-omniscient}@postgres:5432/omniscient
       REDIS_URL: redis://redis:6379
       PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
       GROQ_API_KEY: ${GROQ_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      PINECONE_INDEX: ${PINECONE_INDEX:-omniscient}
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       STORAGE_LOCAL_PATH: /app/uploads
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # AWS Secrets Manager (optional)
+      AWS_SECRETS_ARN: ${AWS_SECRETS_ARN:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
     volumes:
       - ./uploads:/app/uploads
     depends_on:
@@ -93,6 +164,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
     networks:
       - omniscient-network
     restart: unless-stopped
@@ -104,4 +188,3 @@ volumes:
 networks:
   omniscient-network:
     driver: bridge
-

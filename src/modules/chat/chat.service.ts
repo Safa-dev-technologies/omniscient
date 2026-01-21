@@ -1,7 +1,10 @@
 import { prisma } from '../../lib/prisma.js';
+import { redis } from '../../lib/redis.js';
 import { botEngine } from '../bot/bot.engine.js';
 import * as conversationService from '../conversation/conversation.service.js';
 import { logger } from '../../lib/logger.js';
+import { getUserRateLimiter, RateLimitExceededError } from '../../lib/rate-limit/index.js';
+import type { UserRateLimitConfig } from '../../lib/rate-limit/index.js';
 import type { ChatResponse } from './chat.types.js';
 import type { Channel, EscalationReason } from '@prisma/client';
 
@@ -48,6 +51,25 @@ export async function processChat(params: ProcessChatParams): Promise<ChatRespon
         tenantId,
         webSessionId: sessionId || crypto.randomUUID(),
       },
+    });
+  }
+
+  // Rate limit check - after user is identified
+  const rateLimiter = getUserRateLimiter(redis);
+  const tenantSettings = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
+  const tenantLimits = (tenantSettings?.settings as Record<string, unknown>)?.rateLimits as
+    | { chat?: UserRateLimitConfig }
+    | undefined;
+  const rateLimitResult = await rateLimiter.checkAndRecord(tenantId, user.id, tenantLimits?.chat);
+
+  if (!rateLimitResult.allowed) {
+    throw new RateLimitExceededError({
+      retryAfter: rateLimitResult.retryAfter!,
+      limitType: rateLimitResult.limitType!,
+      userId: user.id,
     });
   }
 
@@ -210,7 +232,8 @@ export async function getConversation(tenantId: string, conversationId: string) 
 export async function escalateConversation(
   tenantId: string,
   conversationId: string,
-  reason?: string
+  reason?: string,
+  options?: { notes?: string; priority?: string }
 ) {
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, tenantId },
@@ -219,6 +242,9 @@ export async function escalateConversation(
   if (!conversation) {
     throw new Error('Conversation not found');
   }
+
+  // Build reason details from reason and notes
+  const reasonDetails = [reason, options?.notes].filter(Boolean).join('\n\n') || undefined;
 
   await prisma.$transaction([
     prisma.conversation.update({
@@ -232,14 +258,14 @@ export async function escalateConversation(
       data: {
         conversationId,
         reason: (reason as EscalationReason) || 'USER_REQUEST',
-        reasonDetails: reason,
+        reasonDetails,
       },
     }),
   ]);
 
-  logger.info({ conversationId, reason }, 'Conversation escalated');
+  logger.info({ conversationId, reason, priority: options?.priority }, 'Conversation escalated');
 
-  return { escalated: true, conversationId };
+  return { escalated: true, conversationId, priority: options?.priority };
 }
 
 export async function closeConversation(tenantId: string, conversationId: string) {

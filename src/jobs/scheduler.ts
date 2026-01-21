@@ -7,7 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { syncQueue } from './queue.js';
 import { logger } from '../lib/logger.js';
 import { env } from '../config/index.js';
-import { parseExpression } from 'cron-parser';
+import cronParser from 'cron-parser';
 import type { KnowledgeSourceType } from '@prisma/client';
 
 const CONNECTOR_TYPES: KnowledgeSourceType[] = ['NOTION', 'ZENDESK'];
@@ -17,7 +17,7 @@ const CONNECTOR_TYPES: KnowledgeSourceType[] = ['NOTION', 'ZENDESK'];
  */
 function calculateNextSync(cronExpression: string): Date {
   try {
-    const interval = parseExpression(cronExpression);
+    const interval = cronParser.parseExpression(cronExpression);
     return interval.next().toDate();
   } catch (error) {
     logger.error({ error, cronExpression }, 'Invalid cron expression');
@@ -85,9 +85,7 @@ export async function checkAndQueueSyncs(): Promise<void> {
         );
 
         // Mark as in_progress
-        const nextSyncAt = source.syncSchedule
-          ? calculateNextSync(source.syncSchedule)
-          : null;
+        const nextSyncAt = source.syncSchedule ? calculateNextSync(source.syncSchedule) : null;
 
         await prisma.knowledgeSource.update({
           where: { id: source.id },
@@ -127,13 +125,13 @@ export function startSyncScheduler(): void {
   logger.info({ intervalSeconds: env.SYNC_SCHEDULER_INTERVAL }, 'Starting sync scheduler');
 
   // Run immediately on start
-  checkAndQueueSyncs().catch(error => {
+  checkAndQueueSyncs().catch((error) => {
     logger.error({ error }, 'Error in initial sync check');
   });
 
   // Then run on interval
   setInterval(() => {
-    checkAndQueueSyncs().catch(error => {
+    checkAndQueueSyncs().catch((error) => {
       logger.error({ error }, 'Error in scheduled sync check');
     });
   }, intervalMs);

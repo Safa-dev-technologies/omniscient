@@ -1,10 +1,22 @@
-import { buildServer } from './server.js';
-import { env } from './config/index.js';
-import { logger } from './lib/logger.js';
-import { prisma } from './lib/prisma.js';
-import { redis } from './lib/redis.js';
+import { loadSecretsFromAWS } from './config/secrets.js';
 
-async function main() {
+/**
+ * Bootstrap the application
+ *
+ * Secrets must be loaded BEFORE importing modules that validate env vars.
+ * This ensures AWS Secrets Manager values are available during env validation.
+ */
+async function bootstrap(): Promise<void> {
+  // Load secrets first (before env validation)
+  await loadSecretsFromAWS();
+
+  // Now import modules that depend on validated env
+  const { buildServer } = await import('./server.js');
+  const { env } = await import('./config/index.js');
+  const { logger } = await import('./lib/logger.js');
+  const { prisma } = await import('./lib/prisma.js');
+  const { redis } = await import('./lib/redis.js');
+
   const server = await buildServer();
 
   // Graceful shutdown
@@ -24,11 +36,14 @@ async function main() {
 
   try {
     await server.listen({ port: env.PORT, host: env.HOST });
-    logger.info(`🚀 Server running at http://${env.HOST}:${env.PORT}`);
+    logger.info(`Server running at http://${env.HOST}:${env.PORT}`);
   } catch (err) {
     logger.error(err, 'Failed to start server');
     process.exit(1);
   }
 }
 
-main();
+bootstrap().catch((error) => {
+  console.error('Failed to start application:', error);
+  process.exit(1);
+});

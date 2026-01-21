@@ -156,10 +156,9 @@ Sitemap: https://example.com/sitemap.xml`;
 Disallow: /admin`;
 
       // Mock sequence: robots.txt (no sitemap), /sitemap.xml (404), /sitemap_index.xml (200)
-      let callCount = 0;
       mockFetch.mockImplementation((url: string | Request | URL) => {
-        const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
-        callCount++;
+        const urlStr =
+          typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
 
         if (urlStr.includes('/robots.txt')) {
           return Promise.resolve({

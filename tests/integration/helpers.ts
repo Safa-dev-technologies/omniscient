@@ -133,6 +133,8 @@ export async function waitForSourceStatus(
 ): Promise<void> {
   const start = Date.now();
   const pollInterval = 500;
+  let undefinedCount = 0;
+  const maxUndefinedChecks = 10; // Fail after 10 consecutive undefined/null checks
 
   // Define status progression order (earlier -> later)
   const statusOrder: Record<string, number> = {
@@ -153,10 +155,25 @@ export async function waitForSourceStatus(
       where: { id: sourceId },
     });
 
-    if (!source?.status) {
+    // Handle source not found
+    if (!source) {
+      throw new Error(`Source ${sourceId} not found in database`);
+    }
+
+    // Handle null/undefined status with limited retries
+    if (source.status === null || source.status === undefined) {
+      undefinedCount++;
+      if (undefinedCount >= maxUndefinedChecks) {
+        throw new Error(
+          `Source ${sourceId} has invalid/null status after ${undefinedCount} checks. This indicates a database or initialization issue.`
+        );
+      }
       await sleep(pollInterval);
       continue;
     }
+
+    // Reset undefined counter on valid status
+    undefinedCount = 0;
 
     const currentStatus = source.status;
     const currentOrder = statusOrder[currentStatus] ?? -1;
@@ -166,13 +183,18 @@ export async function waitForSourceStatus(
       return;
     }
 
+    // Fail fast if status is FAILED and we're not waiting for FAILED
+    if (currentStatus === 'FAILED' && expectedStatus !== 'FAILED') {
+      throw new Error(
+        `Source ${sourceId} failed unexpectedly. Status: FAILED. Message: ${source.statusMessage || 'No error message'}`
+      );
+    }
+
     // If we're waiting for an intermediate status but source has progressed further,
     // that's also success (e.g., waiting for EMBEDDING but status is already INDEXED)
     if (expectedOrder >= 0 && currentOrder > expectedOrder) {
       // Only allow progression for non-terminal states
-      // If waiting for EMBEDDING and status is INDEXED, that's OK
-      // But if waiting for INDEXED and status is FAILED, that's not OK
-      if (expectedStatus !== 'FAILED' && currentStatus !== 'FAILED') {
+      if (currentStatus !== 'FAILED') {
         return;
       }
     }
@@ -185,7 +207,7 @@ export async function waitForSourceStatus(
   });
 
   throw new Error(
-    `Source ${sourceId} did not reach status ${expectedStatus} within ${timeout}ms. Current status: ${source?.status}`
+    `Source ${sourceId} did not reach status ${expectedStatus} within ${timeout}ms. Current status: ${source?.status}. Message: ${source?.statusMessage || 'None'}`
   );
 }
 

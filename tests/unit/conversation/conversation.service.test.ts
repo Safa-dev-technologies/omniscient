@@ -17,6 +17,21 @@ vi.mock('../../../src/lib/prisma.js', () => {
   return { prisma: mockPrisma };
 });
 
+vi.mock('../../../src/lib/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(() => ({
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+    })),
+  },
+}));
+
 vi.mock('../../../src/config/index.js', () => ({
   CONSTANTS: {
     MAX_CONVERSATION_HISTORY: 50,
